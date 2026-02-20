@@ -111,6 +111,40 @@
   border-color: #059669;
 }
 
+/* ===== REFRESH LPN BUTTON ===== */
+.mes-refresh-lpn-btn {
+  margin: 0.5rem 0.5rem 0.5rem 0;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid #4b5563;
+  border-radius: 6px;
+  background: #4b5563;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mes-refresh-lpn-btn:hover:not(:disabled) {
+  background: #374151;
+  border-color: #374151;
+}
+
+.mes-refresh-lpn-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.mes-refresh-lpn-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mes-refresh-lpn-btn.is-error {
+  border-color: #b91c1c;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 /* ===== TOOLS MENU ===== */
 .mes-tools-menu {
   position: relative;

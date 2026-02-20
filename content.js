@@ -111,6 +111,16 @@ const createCopyLpnLocationButton = (locText) => {
   return button;
 };
 
+const createRefreshLpnButton = () => {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "mes-refresh-lpn-btn";
+  button.textContent = "↻ Refresh LPNs";
+  button.setAttribute("aria-label", "Refresh LPN information");
+  button.addEventListener("click", refreshLpnData);
+  return button;
+};
+
 const createCopyAllLpnButton = () => {
   const button = document.createElement("button");
   button.type = "button";
@@ -368,12 +378,98 @@ const ensureLpnHeaderButtons = () => {
   const wrapper = document.createElement("span");
   wrapper.className = "mes-lpn-header-actions";
 
+  const refreshBtn = createRefreshLpnButton();
   const copyAll = createCopyAllLpnButton();
   const copyAllLoc = createCopyAllLpnLocButton();
 
+  wrapper.appendChild(refreshBtn);
   wrapper.appendChild(copyAll);
   wrapper.appendChild(copyAllLoc);
   rightContainer.appendChild(wrapper);
+};
+
+const refreshLpnData = async () => {
+  const workOrderId = getWorkOrderId();
+  if (!workOrderId) {
+    console.error('Could not find work order ID');
+    return;
+  }
+
+  const refreshBtn = document.querySelector('.mes-refresh-lpn-btn');
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = '↻ Refreshing...';
+  }
+
+  try {
+    const response = await fetch(
+      `https://apirouter.apps.wwt.com/api/forward/mes-api/workOrderInfo?jobHeaderId=${workOrderId}`,
+      {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch work order data: ${response.status}`);
+    }
+
+    const workOrderData = await response.json();
+    const lpnData = workOrderData.onHandLPNs || [];
+
+    // Update the LPN table
+    const lpnTableBody = document.querySelector('#wo-lpn-body');
+    if (lpnTableBody) {
+      // Clear existing rows
+      lpnTableBody.innerHTML = '';
+
+      // Add new rows
+      lpnData.forEach(lpn => {
+        const row = document.createElement('tr');
+        row.setAttribute('data-v-512c6e58', '');
+
+        // LPN cell
+        const lpnCell = document.createElement('td');
+        lpnCell.setAttribute('data-v-512c6e58', '');
+        lpnCell.textContent = lpn.licensePlateNumber;
+        row.appendChild(lpnCell);
+
+        // Location cell
+        const locCell = document.createElement('td');
+        locCell.setAttribute('data-v-512c6e58', '');
+        locCell.textContent = lpn.location || '';
+        row.appendChild(locCell);
+
+        lpnTableBody.appendChild(row);
+      });
+
+      // Re-enhance the table with copy buttons
+      enhanceLpnTable();
+    }
+
+    if (refreshBtn) {
+      refreshBtn.textContent = '✓ Refreshed!';
+      setTimeout(() => {
+        refreshBtn.textContent = '↻ Refresh LPNs';
+        refreshBtn.disabled = false;
+      }, 2000);
+    }
+  } catch (error) {
+    console.error('Error refreshing LPN data:', error);
+    if (refreshBtn) {
+      refreshBtn.textContent = '✗ Error';
+      refreshBtn.classList.add('is-error');
+      setTimeout(() => {
+        refreshBtn.textContent = '↻ Refresh LPNs';
+        refreshBtn.classList.remove('is-error');
+        refreshBtn.disabled = false;
+      }, 2000);
+    }
+  }
 };
 
 const getWorkOrderId = () => {
