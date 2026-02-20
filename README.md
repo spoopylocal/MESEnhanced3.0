@@ -4,7 +4,7 @@ A comprehensive Chrome/Firefox extension that enhances the MES (Manufacturing Ex
 
 ## Features
 
-### 🔘 Quick Copy Buttons
+### Quick Copy Buttons
 - **Part Numbers (PN)**: Individual copy buttons next to each PN
 - **Copy All PNs**: Bulk copy all part numbers from a work order
 - **Copy All PNs + QTY**: Copy part numbers with quantities
@@ -13,7 +13,7 @@ A comprehensive Chrome/Firefox extension that enhances the MES (Manufacturing Ex
 - **Work Order (WO)**: Quick copy work order number
 - **Service Template (SR)**: Copy service template name
 
-### 📊 MO Tracking Tools (Tools Menu)
+### MO Tracking Tools (Tools Menu)
 
 #### 1. MO PRM/INFO
 - Enter multiple MO (Move Order) numbers (comma, space, or newline separated)
@@ -47,7 +47,7 @@ MO156913879    WO123457    HPE ProLiant DL380         20-Mar
 - Copies summary to clipboard
 - Detailed console output with warnings
 
-### 🔍 Serial Checkers (Tools Menu)
+### Serial Checkers (Tools Menu)
 
 #### 3. LSC Serial Checker (LinkedIn Serial Checker)
 - Scans work order for serial number completeness
@@ -64,7 +64,7 @@ MO156913879    WO123457    HPE ProLiant DL380         20-Mar
 - Uses `WIP_JOB` document type
 - Ignores MAC address fields from validation
 
-### 📎 Asset Management
+### Asset Management
 
 #### ASSET Button
 - Downloads asset sheet attachment automatically
@@ -73,7 +73,7 @@ MO156913879    WO123457    HPE ProLiant DL380         20-Mar
 - Shows loading indicator during download
 - Provides feedback if no asset sheet found
 
-### 📄 Placard Features
+### Placard Features
 - Auto-filled placard downloads
 - Pre-populates fields from work order:
   - MES Work Order
@@ -109,7 +109,7 @@ MO156913879    WO123457    HPE ProLiant DL380         20-Mar
 5. **WO button** to copy work order number
 
 ### Tools Menu:
-Click the gear icon (⚙️) in the top-right header to access all tools.
+Click the gear icon in the top-right header to access all tools.
 
 ## Technical Details
 
@@ -131,13 +131,13 @@ Click the gear icon (⚙️) in the top-right header to access all tools.
 ## Changelog
 
 ### Version 3.0.0 (Current)
-- ✅ Integrated LSC and IBC serial checkers
-- ✅ Fixed asset sheet download with better error handling
-- ✅ Updated MO PRM/INFO with improved error checking and batch processing
-- ✅ Added comprehensive toast notifications
-- ✅ Improved UI consistency across all features
-- ✅ Better clipboard handling with fallbacks
-- ✅ Enhanced modal styling for serial scan results
+- Integrated LSC and IBC serial checkers
+- Fixed asset sheet download with better error handling
+- Updated MO PRM/INFO with improved error checking and batch processing
+- Added comprehensive toast notifications
+- Improved UI consistency across all features
+- Better clipboard handling with fallbacks
+- Enhanced modal styling for serial scan results
 
 ### Version 2.0
 - Added placard auto-fill
