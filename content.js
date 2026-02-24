@@ -1929,8 +1929,14 @@ async function downloadModifiedPlacardByWoId(workOrderId, buttonElement = null) 
     
     console.log('Sending message to background script:', message);
     
-    const bgResponse = await safeSendMessage(message);
-    console.log('Response from background script:', bgResponse);
+    let bgResponse;
+    try {
+      bgResponse = await safeSendMessage(message);
+      console.log('Response from background script:', bgResponse);
+    } catch (error) {
+      console.error('Error sending message to background:', error);
+      throw error;
+    }
     
     if (buttonElement) {
       buttonElement.disabled = false;
@@ -2069,7 +2075,7 @@ ensureLpnHeaderButtons();
 ensureWoCopyButton();
 createToolsMenu();
 // addPlacardDownloadButton();
-// interceptGeneratePlacardClick(); // Intercept the Generate Placard menu click
+interceptGeneratePlacardClick(); // Intercept the Generate Placard menu click
 
 const observer = new MutationObserver(() => {
   enhancePnCells();

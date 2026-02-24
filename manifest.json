@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MES Enhanced 3.0",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Enhanced MES tools: copy buttons, asset downloads, MO tracking, serial checkers (LSC/IBC), and auto-filled placards.",
   "permissions": [
     "downloads"
@@ -24,7 +24,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["xlsx.full.min.js", "exceljs.min.js"],
+      "resources": ["xlsx.full.min.js", "exceljs.bare.min.js"],
       "matches": ["https://mes.apps.wwt.com/*"]
     }
   ]

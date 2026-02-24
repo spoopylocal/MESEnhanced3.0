@@ -1,6 +1,6 @@
-// Load ExcelJS library for Excel modification
+// Load ExcelJS library for Excel modification (CSP-safe version)
 try {
-  importScripts('exceljs.min.js');
+  importScripts('exceljs.bare.min.js');
   console.log('ExcelJS import successful');
 } catch (e) {
   console.error('Failed to import ExcelJS:', e);
@@ -197,17 +197,19 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message?.type === "modifyPlacardExcel") {
-      console.log('Received modifyPlacardExcel message:', message);
+      console.log('=== RECEIVED modifyPlacardExcel MESSAGE ===');
+      console.log('Message data:', JSON.stringify(message, null, 2));
       try {
         console.log('Preparing Excel data...');
         const extraData = await prepareExcelData(message.workOrderData);
-        console.log('Excel data prepared:', extraData);
+        console.log('Excel data prepared:', JSON.stringify(extraData, null, 2));
         console.log('Downloading and modifying Excel from:', message.url);
         await modifyAndDownloadExcel(message.url, extraData, message.filename);
-        console.log('Excel modified and downloaded successfully');
+        console.log('=== Excel modified and downloaded successfully ===');
         return { ok: true };
       } catch (error) {
-        console.error('Error modifying placard:', error);
+        console.error('=== ERROR modifying placard ===', error);
+        console.error('Stack:', error.stack);
         return { ok: false, error: error.message };
       }
     }
@@ -257,11 +259,11 @@ async function modifyAndDownloadExcel(url, extraData, filename) {
       
       const arrayBuffer = await response.arrayBuffer();
       
-      // Manifest V2 supports URL.createObjectURL
-      const blob = new Blob([arrayBuffer], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      });
-      const downloadUrl = URL.createObjectURL(blob);
+      // Convert to base64 data URL (Manifest V3 compatible)
+      const base64 = btoa(
+        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      );
+      const downloadUrl = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${base64}`;
       
       await browser.downloads.download({
         url: downloadUrl,
@@ -269,9 +271,6 @@ async function modifyAndDownloadExcel(url, extraData, filename) {
         saveAs: false,
         conflictAction: 'uniquify'
       });
-      
-      // Clean up blob URL
-      setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
       
       return;
     }
@@ -297,42 +296,55 @@ async function modifyAndDownloadExcel(url, extraData, filename) {
 
     // Get the first sheet
     const worksheet = workbook.worksheets[0];
+    console.log('Worksheet loaded:', worksheet.name, 'Rows:', worksheet.rowCount);
 
     // Update cells in specific rows that contain a label (fully preserves formatting)
     if (extraData && extraData.updateByLabel) {
+      console.log('Applying', extraData.updateByLabel.length, 'updates...');
       extraData.updateByLabel.forEach(({ label, valueCol, value }) => {
-        // Iterate through all rows
-        worksheet.eachRow((row, rowNumber) => {
+        console.log('Looking for label:', label, 'to update with:', value);
+        let updateCount = 0;
+        // Iterate through all rows (including empty ones)
+        worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
           // Check each cell in the row for the label
           let labelFound = false;
-          row.eachCell((cell, colNumber) => {
+          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
             if (!labelFound && cell.value && cell.value.toString().includes(label)) {
               // Found the label
+              console.log('Found label "' + label + '" at row', rowNumber, 'col', colNumber);
               labelFound = true;
               let targetCell;
               if (valueCol !== undefined) {
                 // Use absolute column position (0-indexed, so add 1 for ExcelJS)
                 targetCell = row.getCell(valueCol + 1);
+                console.log('Updating absolute column', valueCol + 1, 'with:', value);
               } else {
                 // Update the cell to the RIGHT of the label (next column)
                 targetCell = row.getCell(colNumber + 1);
+                console.log('Updating cell to the right (col', colNumber + 1, ') with:', value);
               }
               targetCell.value = value;
+              updateCount++;
               // Formatting is automatically preserved by ExcelJS
             }
           });
         });
+        if (updateCount === 0) {
+          console.warn('Label "' + label + '" was not found in the worksheet!');
+        }
       });
+      console.log('All updates applied');
     }
 
     // Generate modified Excel file
     const buffer = await workbook.xlsx.writeBuffer();
+    console.log('Excel buffer generated, size:', buffer.byteLength);
 
-    // Manifest V2 supports URL.createObjectURL
-    const blob = new Blob([buffer], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    });
-    const downloadUrl = URL.createObjectURL(blob);
+    // Convert buffer to base64 data URL (Manifest V3 compatible)
+    const base64 = btoa(
+      new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
+    const downloadUrl = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${base64}`;
 
     // Download the modified file
     await browser.downloads.download({
@@ -342,8 +354,7 @@ async function modifyAndDownloadExcel(url, extraData, filename) {
       conflictAction: 'uniquify'
     });
     
-    // Clean up blob URL
-    setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+    console.log('Download initiated successfully');
   } catch (error) {
     console.error('Error modifying Excel:', error);
     throw error;
