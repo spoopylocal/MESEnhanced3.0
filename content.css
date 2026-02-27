@@ -1,7 +1,7 @@
 /* ===== BUTTON THEME VARIABLES ===== */
 :root {
   --mes-btn-bg: #4b5563;
-  --mes-btn-border: #4b5563;
+  --mes-btn-border: transparent;
   --mes-btn-hover: #374151;
   --mes-btn-text: #ffffff;
 }
@@ -269,6 +269,22 @@
   border-radius: 4px;
   background: transparent;
   cursor: pointer;
+}
+
+.mes-customization-row input[type="color"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mes-customization-select {
+  min-width: 78px;
+  height: 24px;
+  border: 1px solid #4b5563;
+  border-radius: 4px;
+  background: #111827;
+  color: #f3f4f6;
+  font-size: 11px;
+  padding: 0 0.35rem;
 }
 
 .mes-customization-actions {
