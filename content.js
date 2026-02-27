@@ -871,9 +871,9 @@ const createToolsMenu = () => {
   dropdown.className = 'mes-tools-dropdown';
   dropdown.innerHTML = `
     <div class="mes-tools-list">
-      <div class="mes-tools-label">— MO Stuff —</div>
+      <div class="mes-tools-label">— MO Tools —</div>
       <button class="mes-tool-item" data-tool="mo-auto-prm">MO PRM/INFO</button>
-      <button class="mes-tool-item" data-tool="mo-tracker">MO STATUS</button>
+      <button class="mes-tool-item" data-tool="mo-tracker">MO STATUS (Not Working)</button>
       <div class="mes-tools-label">— Sheet Updater —</div>
       <button class="mes-tool-item" data-tool="ib-update-tracker">IB Update Tracker</button>
       <div class="mes-tools-label">— Serial Checkers —</div>
