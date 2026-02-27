@@ -17,7 +17,11 @@ if (typeof ExcelJS !== 'undefined') {
   console.log('ExcelJS version:', ExcelJS.version || 'unknown');
 }
 
-const UPDATE_FEED_URL = 'https://raw.githubusercontent.com/spoopylocal/MESEnhanced3.0/main/update-feed.json';
+const UPDATE_FEED_URLS = [
+  'https://raw.githubusercontent.com/spoopylocal/MESEnhanced3.0/main/update-feed.json',
+  'https://raw.githubusercontent.com/spoopylocal/MESEnhanced3.0/master/update-feed.json',
+  browser.runtime.getURL('update-feed.json')
+];
 const UPDATE_ALARM_NAME = 'mes-enhanced-daily-update-check';
 const UPDATE_STATUS_KEY = 'mesUpdateStatus';
 
@@ -47,17 +51,35 @@ async function getSavedUpdateStatus() {
 async function checkForUpdates(trigger = 'manual') {
   const currentVersion = browser.runtime.getManifest().version;
   try {
-    const response = await fetch(UPDATE_FEED_URL, {
-      method: 'GET',
-      cache: 'no-cache',
-      headers: { 'Accept': 'application/json' }
-    });
+    let payload = null;
+    let resolvedFeedUrl = null;
+    const failures = [];
 
-    if (!response.ok) {
-      throw new Error(`Update feed HTTP ${response.status}`);
+    for (const feedUrl of UPDATE_FEED_URLS) {
+      try {
+        const response = await fetch(feedUrl, {
+          method: 'GET',
+          cache: 'no-cache',
+          headers: { 'Accept': 'application/json' }
+        });
+
+        if (!response.ok) {
+          failures.push(`${feedUrl} -> HTTP ${response.status}`);
+          continue;
+        }
+
+        payload = await response.json();
+        resolvedFeedUrl = feedUrl;
+        break;
+      } catch (feedError) {
+        failures.push(`${feedUrl} -> ${feedError?.message || String(feedError)}`);
+      }
     }
 
-    const payload = await response.json();
+    if (!payload) {
+      throw new Error(`Update feed unavailable. Tried: ${failures.join(' | ')}`);
+    }
+
     const latestVersion = String(payload?.latestVersion || currentVersion);
     const notes = Array.isArray(payload?.notes)
       ? payload.notes.filter((item) => typeof item === 'string').slice(0, 6)
@@ -73,6 +95,7 @@ async function checkForUpdates(trigger = 'manual') {
       updateAvailable,
       notes,
       downloadUrl,
+      feedUrl: resolvedFeedUrl,
       ok: true
     };
 
