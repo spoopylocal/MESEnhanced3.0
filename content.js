@@ -14,6 +14,14 @@ const COPY_WO_BUTTON_CLASS = "mes-copy-wo-btn";
 const COPY_ASSET_BUTTON_CLASS = "mes-copy-asset-btn";
 const COPY_SR_BUTTON_CLASS = "mes-copy-sr-btn";
 const WRAPPER_CLASS = "mes-pn-wrapper";
+const BUTTON_SETTINGS_STORAGE_KEY = "mes-button-settings-v1";
+const DEFAULT_BUTTON_SETTINGS = {
+  primaryColor: "#4b5563",
+  hoverColor: "#374151",
+  textColor: "#ffffff"
+};
+
+let currentButtonSettings = { ...DEFAULT_BUTTON_SETTINGS };
 
 // Helper function to check if extension context is still valid
 function isExtensionContextValid() {
@@ -48,6 +56,90 @@ async function safeSendMessage(message) {
       }
     }
   });
+}
+
+function isValidHexColor(value) {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
+function sanitizeButtonSettings(raw) {
+  const primaryColor = isValidHexColor(raw?.primaryColor)
+    ? raw.primaryColor
+    : DEFAULT_BUTTON_SETTINGS.primaryColor;
+  const hoverColor = isValidHexColor(raw?.hoverColor)
+    ? raw.hoverColor
+    : DEFAULT_BUTTON_SETTINGS.hoverColor;
+  const textColor = isValidHexColor(raw?.textColor)
+    ? raw.textColor
+    : DEFAULT_BUTTON_SETTINGS.textColor;
+
+  return {
+    primaryColor,
+    hoverColor,
+    textColor
+  };
+}
+
+function loadButtonSettings() {
+  try {
+    const stored = localStorage.getItem(BUTTON_SETTINGS_STORAGE_KEY);
+    if (!stored) {
+      return { ...DEFAULT_BUTTON_SETTINGS };
+    }
+
+    return sanitizeButtonSettings(JSON.parse(stored));
+  } catch (error) {
+    console.warn("Failed to load button settings", error);
+    return { ...DEFAULT_BUTTON_SETTINGS };
+  }
+}
+
+function saveButtonSettings(settings) {
+  try {
+    localStorage.setItem(BUTTON_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  } catch (error) {
+    console.warn("Failed to save button settings", error);
+  }
+}
+
+function applyButtonSettings(settings) {
+  const finalSettings = sanitizeButtonSettings(settings);
+  const root = document.documentElement;
+
+  root.style.setProperty("--mes-btn-bg", finalSettings.primaryColor);
+  root.style.setProperty("--mes-btn-border", finalSettings.primaryColor);
+  root.style.setProperty("--mes-btn-hover", finalSettings.hoverColor);
+  root.style.setProperty("--mes-btn-text", finalSettings.textColor);
+
+  currentButtonSettings = finalSettings;
+}
+
+function getButtonSettingsFromControls() {
+  const primaryInput = document.getElementById("mes-btn-primary-color");
+  const hoverInput = document.getElementById("mes-btn-hover-color");
+  const textInput = document.getElementById("mes-btn-text-color");
+
+  return sanitizeButtonSettings({
+    primaryColor: primaryInput?.value,
+    hoverColor: hoverInput?.value,
+    textColor: textInput?.value
+  });
+}
+
+function syncButtonControls(settings) {
+  const primaryInput = document.getElementById("mes-btn-primary-color");
+  const hoverInput = document.getElementById("mes-btn-hover-color");
+  const textInput = document.getElementById("mes-btn-text-color");
+
+  if (primaryInput) {
+    primaryInput.value = settings.primaryColor;
+  }
+  if (hoverInput) {
+    hoverInput.value = settings.hoverColor;
+  }
+  if (textInput) {
+    textInput.value = settings.textColor;
+  }
 }
 
 const isAlreadyEnhanced = (cell) =>
@@ -879,6 +971,25 @@ const createToolsMenu = () => {
       <div class="mes-tools-label">— Serial Checkers —</div>
       <button class="mes-tool-item" data-tool="serial-scan-lsc">LSC Serial Checker</button>
       <button class="mes-tool-item" data-tool="serial-scan-ibc">IBC Serial Checker</button>
+      <div class="mes-tools-label">— Button Style —</div>
+      <div class="mes-button-customization">
+        <label class="mes-customization-row" for="mes-btn-primary-color">
+          <span>Primary</span>
+          <input id="mes-btn-primary-color" type="color" />
+        </label>
+        <label class="mes-customization-row" for="mes-btn-hover-color">
+          <span>Hover</span>
+          <input id="mes-btn-hover-color" type="color" />
+        </label>
+        <label class="mes-customization-row" for="mes-btn-text-color">
+          <span>Text</span>
+          <input id="mes-btn-text-color" type="color" />
+        </label>
+        <div class="mes-customization-actions">
+          <button type="button" class="mes-customization-btn" id="mes-btn-style-apply">Apply</button>
+          <button type="button" class="mes-customization-btn" id="mes-btn-style-reset">Reset</button>
+        </div>
+      </div>
     </div>
   `;
 
@@ -895,6 +1006,8 @@ const createToolsMenu = () => {
     // Fallback to appendChild if insertBefore conditions not met
     headerRight.appendChild(menuContainer);
   }
+
+  syncButtonControls(currentButtonSettings);
 };
 
 // ===== MO AUTO PRM/COPY SCRIPT =====
@@ -1865,6 +1978,23 @@ async function runIBUpdateTracker() {
 
 // ===== TOOLS MENU EVENT HANDLER =====
 document.addEventListener('click', (e) => {
+  const applyStyleButton = e.target.closest('#mes-btn-style-apply');
+  if (applyStyleButton) {
+    const settings = getButtonSettingsFromControls();
+    applyButtonSettings(settings);
+    saveButtonSettings(settings);
+    return;
+  }
+
+  const resetStyleButton = e.target.closest('#mes-btn-style-reset');
+  if (resetStyleButton) {
+    const defaults = { ...DEFAULT_BUTTON_SETTINGS };
+    applyButtonSettings(defaults);
+    saveButtonSettings(defaults);
+    syncButtonControls(defaults);
+    return;
+  }
+
   const toolButton = e.target.closest('.mes-tool-item');
   if (!toolButton) return;
 
@@ -2067,6 +2197,9 @@ function addPlacardDownloadButton() {
     subtree: true
   });
 }
+
+currentButtonSettings = loadButtonSettings();
+applyButtonSettings(currentButtonSettings);
 
 enhancePnCells();
 ensureCopyAllButton();

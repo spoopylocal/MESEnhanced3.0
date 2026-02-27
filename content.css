@@ -1,3 +1,11 @@
+/* ===== BUTTON THEME VARIABLES ===== */
+:root {
+  --mes-btn-bg: #4b5563;
+  --mes-btn-border: #4b5563;
+  --mes-btn-hover: #374151;
+  --mes-btn-text: #ffffff;
+}
+
 /* ===== WRAPPER FOR PN CELLS ===== */
 .mes-pn-wrapper {
   display: inline-flex;
@@ -18,10 +26,10 @@
 .mes-copy-sr-btn {
   margin-left: 0.25rem;
   padding: 0.125rem 0.5rem;
-  border: 1px solid #4b5563;
+  border: 1px solid var(--mes-btn-border);
   border-radius: 4px;
-  background: #4b5563;
-  color: #ffffff;
+  background: var(--mes-btn-bg);
+  color: var(--mes-btn-text);
   font-size: 11px;
   font-weight: 500;
   line-height: 1.2;
@@ -36,8 +44,8 @@
 .mes-copy-wo-btn:hover,
 .mes-copy-asset-btn:hover,
 .mes-copy-sr-btn:hover {
-  background: #374151;
-  border-color: #374151;
+  background: var(--mes-btn-hover);
+  border-color: var(--mes-btn-hover);
 }
 
 .mes-copy-btn:active,
@@ -78,10 +86,10 @@
 .mes-copy-all-lpn-loc-btn {
   margin: 0.5rem 0.5rem 0.5rem 0;
   padding: 0.375rem 0.75rem;
-  border: 1px solid #4b5563;
+  border: 1px solid var(--mes-btn-border);
   border-radius: 6px;
-  background: #4b5563;
-  color: white;
+  background: var(--mes-btn-bg);
+  color: var(--mes-btn-text);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -92,8 +100,8 @@
 .mes-copy-all-pn-qty-btn:hover,
 .mes-copy-all-lpn-btn:hover,
 .mes-copy-all-lpn-loc-btn:hover {
-  background: #374151;
-  border-color: #374151;
+  background: var(--mes-btn-hover);
+  border-color: var(--mes-btn-hover);
 }
 
 .mes-copy-all-btn:active,
@@ -115,10 +123,10 @@
 .mes-refresh-lpn-btn {
   margin: 0.5rem 0.5rem 0.5rem 0;
   padding: 0.375rem 0.75rem;
-  border: 1px solid #4b5563;
+  border: 1px solid var(--mes-btn-border);
   border-radius: 6px;
-  background: #4b5563;
-  color: white;
+  background: var(--mes-btn-bg);
+  color: var(--mes-btn-text);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -126,8 +134,8 @@
 }
 
 .mes-refresh-lpn-btn:hover:not(:disabled) {
-  background: #374151;
-  border-color: #374151;
+  background: var(--mes-btn-hover);
+  border-color: var(--mes-btn-hover);
 }
 
 .mes-refresh-lpn-btn:active:not(:disabled) {
@@ -157,10 +165,10 @@
   align-items: center;
   gap: 0.375rem;
   padding: 0.375rem 0.75rem;
-  border: 1px solid #4b5563;
+  border: 1px solid var(--mes-btn-border);
   border-radius: 6px;
-  background: #4b5563;
-  color: #ffffff;
+  background: var(--mes-btn-bg);
+  color: var(--mes-btn-text);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -173,8 +181,8 @@
 }
 
 .mes-tools-summary:hover {
-  background: #374151;
-  border-color: #374151;
+  background: var(--mes-btn-hover);
+  border-color: var(--mes-btn-hover);
 }
 
 .mes-tools-icon {
@@ -210,8 +218,8 @@
   padding: 0.5rem 0.75rem;
   border: none;
   border-radius: 4px;
-  background: #4b5563;
-  color: #ffffff;
+  background: var(--mes-btn-bg);
+  color: var(--mes-btn-text);
   font-size: 13px;
   font-weight: 500;
   text-align: center;
@@ -220,8 +228,8 @@
 }
 
 .mes-tool-item:hover {
-  background: #374151;
-  color: #ffffff;
+  background: var(--mes-btn-hover);
+  color: var(--mes-btn-text);
 }
 
 .mes-tool-item:active {
@@ -236,6 +244,81 @@
   text-align: center;
   letter-spacing: 0.025em;
   text-transform: uppercase;
+}
+
+.mes-button-customization {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.4rem 0.3rem 0.2rem;
+}
+
+.mes-customization-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: #d1d5db;
+  font-size: 12px;
+}
+
+.mes-customization-row input[type="color"] {
+  width: 42px;
+  height: 24px;
+  border: 1px solid #4b5563;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.mes-customization-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.mes-customization-btn {
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--mes-btn-border);
+  border-radius: 4px;
+  background: var(--mes-btn-bg);
+  color: var(--mes-btn-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mes-customization-btn:hover {
+  background: var(--mes-btn-hover);
+  border-color: var(--mes-btn-hover);
+}
+
+@keyframes mes-btn-hover-pop {
+  0% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(1.045);
+  }
+}
+
+.mes-copy-btn:hover,
+.mes-copy-lpn-btn:hover,
+.mes-copy-lpn-loc-btn:hover,
+.mes-copy-wo-btn:hover,
+.mes-copy-asset-btn:hover,
+.mes-copy-sr-btn:hover,
+.mes-copy-all-btn:hover,
+.mes-copy-all-pn-qty-btn:hover,
+.mes-copy-all-lpn-btn:hover,
+.mes-copy-all-lpn-loc-btn:hover,
+.mes-refresh-lpn-btn:hover:not(:disabled),
+.mes-tools-summary:hover,
+.mes-tool-item:hover,
+.mes-customization-btn:hover {
+  animation: mes-btn-hover-pop 0.16s ease-out forwards;
 }
 
 /* ===== SERIAL SCAN MODAL ===== */
