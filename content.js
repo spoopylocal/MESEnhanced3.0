@@ -20,9 +20,7 @@ const UPDATE_LAST_PROMPTED_KEY = "mes-update-last-prompted-day";
 const DEFAULT_BUTTON_SETTINGS = {
   primaryColor: "#4b5563",
   hoverColor: "#374151",
-  textColor: "#ffffff",
-  outlineMode: "none",
-  outlineColor: "#4b5563"
+  textColor: "#ffffff"
 };
 
 let currentButtonSettings = { ...DEFAULT_BUTTON_SETTINGS };
@@ -76,19 +74,11 @@ function sanitizeButtonSettings(raw) {
   const textColor = isValidHexColor(raw?.textColor)
     ? raw.textColor
     : DEFAULT_BUTTON_SETTINGS.textColor;
-  const outlineMode = ["none", "custom"].includes(raw?.outlineMode)
-    ? raw.outlineMode
-    : DEFAULT_BUTTON_SETTINGS.outlineMode;
-  const outlineColor = isValidHexColor(raw?.outlineColor)
-    ? raw.outlineColor
-    : DEFAULT_BUTTON_SETTINGS.outlineColor;
 
   return {
     primaryColor,
     hoverColor,
-    textColor,
-    outlineMode,
-    outlineColor
+    textColor
   };
 }
 
@@ -117,12 +107,9 @@ function saveButtonSettings(settings) {
 function applyButtonSettings(settings) {
   const finalSettings = sanitizeButtonSettings(settings);
   const root = document.documentElement;
-  const borderColor = finalSettings.outlineMode === "custom"
-    ? finalSettings.outlineColor
-    : "transparent";
 
   root.style.setProperty("--mes-btn-bg", finalSettings.primaryColor);
-  root.style.setProperty("--mes-btn-border", borderColor);
+  root.style.setProperty("--mes-btn-border", "transparent");
   root.style.setProperty("--mes-btn-hover", finalSettings.hoverColor);
   root.style.setProperty("--mes-btn-text", finalSettings.textColor);
 
@@ -133,15 +120,11 @@ function getButtonSettingsFromControls() {
   const primaryInput = document.getElementById("mes-btn-primary-color");
   const hoverInput = document.getElementById("mes-btn-hover-color");
   const textInput = document.getElementById("mes-btn-text-color");
-  const outlineModeInput = document.getElementById("mes-btn-outline-mode");
-  const outlineColorInput = document.getElementById("mes-btn-outline-color");
 
   return sanitizeButtonSettings({
     primaryColor: primaryInput?.value,
     hoverColor: hoverInput?.value,
-    textColor: textInput?.value,
-    outlineMode: outlineModeInput?.value,
-    outlineColor: outlineColorInput?.value
+    textColor: textInput?.value
   });
 }
 
@@ -149,8 +132,6 @@ function syncButtonControls(settings) {
   const primaryInput = document.getElementById("mes-btn-primary-color");
   const hoverInput = document.getElementById("mes-btn-hover-color");
   const textInput = document.getElementById("mes-btn-text-color");
-  const outlineModeInput = document.getElementById("mes-btn-outline-mode");
-  const outlineColorInput = document.getElementById("mes-btn-outline-color");
 
   if (primaryInput) {
     primaryInput.value = settings.primaryColor;
@@ -160,13 +141,6 @@ function syncButtonControls(settings) {
   }
   if (textInput) {
     textInput.value = settings.textColor;
-  }
-  if (outlineModeInput) {
-    outlineModeInput.value = settings.outlineMode;
-  }
-  if (outlineColorInput) {
-    outlineColorInput.value = settings.outlineColor;
-    outlineColorInput.disabled = settings.outlineMode !== "custom";
   }
 }
 
@@ -1108,17 +1082,6 @@ const createToolsMenu = () => {
         <label class="mes-customization-row" for="mes-btn-text-color">
           <span>Text</span>
           <input id="mes-btn-text-color" type="color" />
-        </label>
-        <label class="mes-customization-row" for="mes-btn-outline-mode">
-          <span>Outline</span>
-          <select id="mes-btn-outline-mode" class="mes-customization-select">
-            <option value="none">None</option>
-            <option value="custom">Custom</option>
-          </select>
-        </label>
-        <label class="mes-customization-row" for="mes-btn-outline-color">
-          <span>Outline Color</span>
-          <input id="mes-btn-outline-color" type="color" />
         </label>
         <div class="mes-customization-actions">
           <button type="button" class="mes-customization-btn" id="mes-btn-style-apply">Apply</button>
@@ -2160,21 +2123,6 @@ document.addEventListener('click', (e) => {
     runSerialScan('IBC');
   } else if (tool === 'check-updates') {
     checkForExtensionUpdates('manual-tool-check');
-  }
-});
-
-document.addEventListener('change', (e) => {
-  const target = e.target;
-  if (!(target instanceof HTMLElement)) {
-    return;
-  }
-
-  if (target.id === 'mes-btn-outline-mode') {
-    const outlineModeInput = document.getElementById('mes-btn-outline-mode');
-    const outlineColorInput = document.getElementById('mes-btn-outline-color');
-    if (outlineModeInput && outlineColorInput) {
-      outlineColorInput.disabled = outlineModeInput.value !== 'custom';
-    }
   }
 });
 
