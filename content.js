@@ -15,6 +15,8 @@ const COPY_ASSET_BUTTON_CLASS = "mes-copy-asset-btn";
 const COPY_SR_BUTTON_CLASS = "mes-copy-sr-btn";
 const WRAPPER_CLASS = "mes-pn-wrapper";
 const BUTTON_SETTINGS_STORAGE_KEY = "mes-button-settings-v1";
+const UPDATE_DISMISSED_KEY = "mes-update-dismissed-version";
+const UPDATE_LAST_PROMPTED_KEY = "mes-update-last-prompted-day";
 const DEFAULT_BUTTON_SETTINGS = {
   primaryColor: "#4b5563",
   hoverColor: "#374151",
@@ -139,6 +141,101 @@ function syncButtonControls(settings) {
   }
   if (textInput) {
     textInput.value = settings.textColor;
+  }
+}
+
+function getDayKey(timestamp = Date.now()) {
+  const d = new Date(timestamp);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function openUrlInNewTab(url) {
+  if (!url) return;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function closeUpdatePopup() {
+  document.getElementById("mes-update-popup")?.remove();
+}
+
+function showUpdatePopup(status) {
+  if (!status?.updateAvailable || !status?.latestVersion) {
+    return;
+  }
+
+  closeUpdatePopup();
+
+  const popup = document.createElement("div");
+  popup.id = "mes-update-popup";
+  popup.className = "mes-update-popup";
+
+  const notes = Array.isArray(status.notes) ? status.notes.slice(0, 5) : [];
+  const notesHtml = notes.length
+    ? `<ul>${notes.map((item) => `<li>${item}</li>`).join("")}</ul>`
+    : `<ul><li>Performance improvements and fixes</li></ul>`;
+
+  popup.innerHTML = `
+    <div class="mes-update-title">Update Available: v${status.latestVersion}</div>
+    <div class="mes-update-sub">Current version: v${status.currentVersion || "unknown"}</div>
+    <div class="mes-update-notes">${notesHtml}</div>
+    <div class="mes-update-actions">
+      <button type="button" class="mes-update-btn" id="mes-update-now">Update</button>
+      <button type="button" class="mes-update-btn secondary" id="mes-update-later">Later</button>
+    </div>
+  `;
+
+  document.body.appendChild(popup);
+
+  const updateBtn = popup.querySelector("#mes-update-now");
+  const laterBtn = popup.querySelector("#mes-update-later");
+
+  updateBtn?.addEventListener("click", () => {
+    localStorage.setItem(UPDATE_DISMISSED_KEY, status.latestVersion);
+    if (status.downloadUrl) {
+      openUrlInNewTab(status.downloadUrl);
+    }
+    closeUpdatePopup();
+  });
+
+  laterBtn?.addEventListener("click", () => {
+    localStorage.setItem(UPDATE_LAST_PROMPTED_KEY, getDayKey());
+    closeUpdatePopup();
+  });
+}
+
+function shouldPromptForUpdate(status) {
+  if (!status?.updateAvailable || !status?.latestVersion) {
+    return false;
+  }
+
+  const dismissedVersion = localStorage.getItem(UPDATE_DISMISSED_KEY);
+  if (dismissedVersion === status.latestVersion) {
+    return false;
+  }
+
+  const lastPromptedDay = localStorage.getItem(UPDATE_LAST_PROMPTED_KEY);
+  return lastPromptedDay !== getDayKey();
+}
+
+async function checkForExtensionUpdates(trigger = "page-load") {
+  try {
+    let status = await safeSendMessage({ type: "GET_UPDATE_STATUS" });
+    if (!status || !status.checkedAt) {
+      status = await safeSendMessage({ type: "CHECK_FOR_UPDATES", trigger });
+    }
+
+    if (shouldPromptForUpdate(status)) {
+      showUpdatePopup(status);
+      localStorage.setItem(UPDATE_LAST_PROMPTED_KEY, getDayKey());
+    }
+
+    return status;
+  } catch (error) {
+    console.warn("Update check failed", error);
+    return null;
   }
 }
 
@@ -971,6 +1068,7 @@ const createToolsMenu = () => {
       <div class="mes-tools-label">— Serial Checkers —</div>
       <button class="mes-tool-item" data-tool="serial-scan-lsc">LSC Serial Checker</button>
       <button class="mes-tool-item" data-tool="serial-scan-ibc">IBC Serial Checker</button>
+      <button class="mes-tool-item" data-tool="check-updates">Check for Updates</button>
       <div class="mes-tools-label">— Button Style —</div>
       <div class="mes-button-customization">
         <label class="mes-customization-row" for="mes-btn-primary-color">
@@ -2023,6 +2121,8 @@ document.addEventListener('click', (e) => {
     runSerialScan('LSC');
   } else if (tool === 'serial-scan-ibc') {
     runSerialScan('IBC');
+  } else if (tool === 'check-updates') {
+    checkForExtensionUpdates('manual-tool-check');
   }
 });
 
@@ -2219,6 +2319,7 @@ ensureWoCopyButton();
 createToolsMenu();
 // addPlacardDownloadButton();
 interceptGeneratePlacardClick(); // Intercept the Generate Placard menu click
+checkForExtensionUpdates('content-startup');
 
 const observer = new MutationObserver(() => {
   enhancePnCells();

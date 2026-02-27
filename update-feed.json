@@ -1,0 +1,9 @@
+{
+  "latestVersion": "3.1.1",
+  "downloadUrl": "https://github.com/spoopylocal/MESEnhanced3.0/releases",
+  "notes": [
+    "Security update: removed hardcoded sheet token",
+    "Added button style customization (primary, hover, text)",
+    "Defaulted to clean hover-only button animation"
+  ]
+}

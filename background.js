@@ -17,6 +17,107 @@ if (typeof ExcelJS !== 'undefined') {
   console.log('ExcelJS version:', ExcelJS.version || 'unknown');
 }
 
+const UPDATE_FEED_URL = 'https://raw.githubusercontent.com/spoopylocal/MESEnhanced3.0/main/update-feed.json';
+const UPDATE_ALARM_NAME = 'mes-enhanced-daily-update-check';
+const UPDATE_STATUS_KEY = 'mesUpdateStatus';
+
+function compareVersions(versionA, versionB) {
+  const a = String(versionA || '0').split('.').map((n) => parseInt(n, 10) || 0);
+  const b = String(versionB || '0').split('.').map((n) => parseInt(n, 10) || 0);
+  const maxLength = Math.max(a.length, b.length);
+  for (let i = 0; i < maxLength; i += 1) {
+    const av = a[i] || 0;
+    const bv = b[i] || 0;
+    if (av > bv) return 1;
+    if (av < bv) return -1;
+  }
+  return 0;
+}
+
+async function saveUpdateStatus(status) {
+  await browser.storage.local.set({ [UPDATE_STATUS_KEY]: status });
+  return status;
+}
+
+async function getSavedUpdateStatus() {
+  const saved = await browser.storage.local.get(UPDATE_STATUS_KEY);
+  return saved?.[UPDATE_STATUS_KEY] || null;
+}
+
+async function checkForUpdates(trigger = 'manual') {
+  const currentVersion = browser.runtime.getManifest().version;
+  try {
+    const response = await fetch(UPDATE_FEED_URL, {
+      method: 'GET',
+      cache: 'no-cache',
+      headers: { 'Accept': 'application/json' }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Update feed HTTP ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const latestVersion = String(payload?.latestVersion || currentVersion);
+    const notes = Array.isArray(payload?.notes)
+      ? payload.notes.filter((item) => typeof item === 'string').slice(0, 6)
+      : [];
+    const downloadUrl = String(payload?.downloadUrl || '');
+    const updateAvailable = compareVersions(latestVersion, currentVersion) > 0;
+
+    const status = {
+      checkedAt: Date.now(),
+      trigger,
+      currentVersion,
+      latestVersion,
+      updateAvailable,
+      notes,
+      downloadUrl,
+      ok: true
+    };
+
+    return saveUpdateStatus(status);
+  } catch (error) {
+    const status = {
+      checkedAt: Date.now(),
+      trigger,
+      currentVersion,
+      latestVersion: currentVersion,
+      updateAvailable: false,
+      notes: [],
+      downloadUrl: '',
+      ok: false,
+      error: error?.message || String(error)
+    };
+    return saveUpdateStatus(status);
+  }
+}
+
+function setupUpdateAlarm() {
+  browser.alarms.create(UPDATE_ALARM_NAME, {
+    delayInMinutes: 1,
+    periodInMinutes: 24 * 60
+  });
+}
+
+browser.runtime.onStartup.addListener(() => {
+  setupUpdateAlarm();
+  checkForUpdates('startup');
+});
+
+browser.runtime.onInstalled.addListener(() => {
+  setupUpdateAlarm();
+  checkForUpdates('installed');
+});
+
+browser.alarms.onAlarm.addListener((alarm) => {
+  if (alarm?.name === UPDATE_ALARM_NAME) {
+    checkForUpdates('daily');
+  }
+});
+
+setupUpdateAlarm();
+
 // Helper function to extract GICLAB ticket from labNotes
 function extractGICLABTicket(labNotes) {
   if (!labNotes) return null;
@@ -159,6 +260,14 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // Wrapper to handle async messages properly in Manifest V2
   const handleAsync = async () => {
+    if (message?.type === 'GET_UPDATE_STATUS') {
+      return getSavedUpdateStatus();
+    }
+
+    if (message?.type === 'CHECK_FOR_UPDATES') {
+      return checkForUpdates(message?.trigger || 'manual');
+    }
+
     if (message?.type === "download") {
       return new Promise((resolve) => {
         chrome.downloads.download(

@@ -295,6 +295,75 @@
   border-color: var(--mes-btn-hover);
 }
 
+.mes-update-popup {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: min(320px, calc(100vw - 24px));
+  padding: 0.65rem 0.7rem;
+  border: 1px solid var(--mes-btn-border);
+  border-radius: 8px;
+  background: #1f2937;
+  color: #e5e7eb;
+  z-index: 2147483647;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.32);
+  font-size: 12px;
+}
+
+.mes-update-title {
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+}
+
+.mes-update-sub {
+  color: #cbd5e1;
+  font-size: 11px;
+  margin-bottom: 0.45rem;
+}
+
+.mes-update-notes ul {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.mes-update-notes li {
+  line-height: 1.25;
+}
+
+.mes-update-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+
+.mes-update-btn {
+  flex: 1;
+  border: 1px solid var(--mes-btn-border);
+  border-radius: 5px;
+  background: var(--mes-btn-bg);
+  color: var(--mes-btn-text);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0.32rem 0.45rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mes-update-btn:hover {
+  background: var(--mes-btn-hover);
+  border-color: var(--mes-btn-hover);
+  animation: mes-btn-hover-pop 0.16s ease-out forwards;
+}
+
+.mes-update-btn.secondary {
+  background: #374151;
+  border-color: #4b5563;
+}
+
 @keyframes mes-btn-hover-pop {
   0% {
     transform: scale(1);
