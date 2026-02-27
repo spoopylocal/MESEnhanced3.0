@@ -1857,8 +1857,18 @@ async function runSerialScan(mode = 'IBC') {
 // ===== IB UPDATE TRACKER =====
 async function runIBUpdateTracker() {
   const WEBAPP = 'https://script.google.com/macros/s/AKfycbxV2MzkL-d7m-Wq_sskGCIUKhTaWmAk8kuVDq71uVYACbZ2OD7LfgKx2LDCaITNAvs/exec';
-  const TOKEN = 'ihateben';
+  const TOKEN_STORAGE_KEY = 'mes-ib-sheet-token';
   const TYPE = 'IBMOR';
+
+  let token = localStorage.getItem(TOKEN_STORAGE_KEY) || '';
+  if (!token) {
+    token = (prompt('Enter IB Update Tracker token:') || '').trim();
+    if (!token) {
+      showSerialScanToast('IB Update Tracker token is required', false);
+      return;
+    }
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  }
 
   const URL_LIST = 'https://apirouter.apps.wwt.com/api/forward/mes-api/workOrders';
   const URL_INFO = 'https://apirouter.apps.wwt.com/api/forward/mes-api/workOrderInfo?jobHeaderId=';
@@ -1952,10 +1962,10 @@ async function runIBUpdateTracker() {
 
     showSerialScanToast(`Uploading ${infos.length} orders…`, true);
 
-    const up = await fetch(WEBAPP + '?token=' + encodeURIComponent(TOKEN), {
+    const up = await fetch(WEBAPP + '?token=' + encodeURIComponent(token), {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ type: TYPE, infos, token: TOKEN })
+      body: JSON.stringify({ type: TYPE, infos, token })
     });
 
     const j = await up.json().catch(() => ({}));
