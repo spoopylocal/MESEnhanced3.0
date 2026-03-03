@@ -1958,14 +1958,31 @@ async function runIBUpdateTracker() {
   const TOKEN_STORAGE_KEY = 'mes-ib-sheet-token';
   const TYPE = 'IBMOR';
 
+  const promptForToken = (existingToken = '') => {
+    const input = prompt('Enter IB Update Tracker token:', existingToken) || '';
+    return input.trim();
+  };
+
+  const isAuthFailure = (status, errorMessage = '') => {
+    if (status === 401 || status === 403) return true;
+    const msg = String(errorMessage || '').toLowerCase();
+    return (
+      msg.includes('token') ||
+      msg.includes('auth') ||
+      msg.includes('unauthorized') ||
+      msg.includes('forbidden') ||
+      msg.includes('invalid password') ||
+      msg.includes('wrong password')
+    );
+  };
+
   let token = localStorage.getItem(TOKEN_STORAGE_KEY) || '';
   if (!token) {
-    token = (prompt('Enter IB Update Tracker token:') || '').trim();
+    token = promptForToken();
     if (!token) {
       showSerialScanToast('IB Update Tracker token is required', false);
       return;
     }
-    localStorage.setItem(TOKEN_STORAGE_KEY, token);
   }
 
   const URL_LIST = 'https://apirouter.apps.wwt.com/api/forward/mes-api/workOrders';
@@ -2058,16 +2075,36 @@ async function runIBUpdateTracker() {
       return;
     }
 
+    const uploadWithToken = async (uploadToken) => {
+      const up = await fetch(WEBAPP + '?token=' + encodeURIComponent(uploadToken), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ type: TYPE, infos, token: uploadToken })
+      });
+      const j = await up.json().catch(() => ({}));
+      return { up, j };
+    };
+
     showSerialScanToast(`Uploading ${infos.length} orders…`, true);
+    let { up, j } = await uploadWithToken(token);
 
-    const up = await fetch(WEBAPP + '?token=' + encodeURIComponent(token), {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ type: TYPE, infos, token })
-    });
+    if (!up.ok || !j.ok) {
+      const authFailed = isAuthFailure(up.status, j.error || up.statusText || up.status);
+      if (authFailed) {
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+        const newToken = promptForToken('');
+        if (!newToken) {
+          showSerialScanToast('IB Update Tracker token is required', false);
+          return;
+        }
+        token = newToken;
+        showSerialScanToast('Retrying upload with new token…', true);
+        ({ up, j } = await uploadWithToken(token));
+      }
+    }
 
-    const j = await up.json().catch(() => ({}));
     if (up.ok && j.ok) {
+      localStorage.setItem(TOKEN_STORAGE_KEY, token);
       showSerialScanToast(
         `✅ Sent ${j.wrote || infos.length} ${TYPE} rows (LPN docs: ${j.lpnDocs || 0}, LPNs: ${j.lpnCount || 0})`,
         true
