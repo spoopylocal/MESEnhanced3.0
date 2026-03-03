@@ -1065,6 +1065,9 @@ const createToolsMenu = () => {
       <button class="mes-tool-item" data-tool="mo-tracker">MO STATUS (Not Working)</button>
       <div class="mes-tools-label">— Sheet Updater —</div>
       <button class="mes-tool-item" data-tool="ib-update-tracker">IB Update Tracker</button>
+      <div class="mes-tools-label">— Reportal —</div>
+      <button class="mes-tool-item" data-tool="inventory-reportal">Inventory Reportal</button>
+      <button class="mes-tool-item" data-tool="outbound-reportal">Outbound Reportal</button>
       <div class="mes-tools-label">— Serial Checkers —</div>
       <button class="mes-tool-item" data-tool="serial-scan-lsc">LSC Serial Checker</button>
       <button class="mes-tool-item" data-tool="serial-scan-ibc">IBC Serial Checker</button>
@@ -2121,6 +2124,130 @@ async function runIBUpdateTracker() {
   }
 }
 
+async function runIbiReportal({ lookupPayload, targetTemplateName, downloadBaseName }) {
+  const IBI_TEST_URL = 'https://reports.wwt.com/ibi_apps/WFServlet';
+  const FINAL_FEX = 'app/wwt_gah_direct.fex';
+  const GAH_CODE = '1083900';
+  const payload = lookupPayload;
+
+  const extractTemplateInfo = (bodyText) => {
+    if (!bodyText) return null;
+    const start = bodyText.indexOf('<fxf');
+    const end = bodyText.indexOf('</fxf>');
+    if (start === -1 || end === -1) return null;
+
+    const xmlOnly = bodyText.slice(start, end + 6);
+    const doc = new DOMParser().parseFromString(xmlOnly, 'text/xml');
+    const parserError = doc.querySelector('parsererror');
+    if (parserError) return null;
+
+    const rows = Array.from(doc.querySelectorAll('table > tr'));
+    if (!rows.length) return null;
+
+    const templates = rows
+      .map((row) => {
+        const nameCell = row.querySelector('td[colnum="c0"]');
+        const templateCell = row.querySelector('td[colnum="c1"]');
+        const templateName = (nameCell?.getAttribute('rawvalue') || nameCell?.textContent || '').trim();
+        const templateString = (templateCell?.getAttribute('rawvalue') || templateCell?.textContent || '').trim();
+        const templateMatch = templateString.match(/\(\}(\d+)\s*$/);
+        const templateId = templateMatch ? templateMatch[1] : '';
+        if (!templateName || !templateId || !templateString) return null;
+        return { templateId, templateString, templateName };
+      })
+      .filter(Boolean);
+
+    if (!templates.length) return null;
+
+    const exactMatch = templates.find(
+      (t) => t.templateName.toLowerCase() === String(targetTemplateName || '').toLowerCase()
+    );
+    return exactMatch || templates[0];
+  };
+
+  try {
+    const response = await safeSendMessage({
+      type: 'IBI_TEST_POST',
+      url: IBI_TEST_URL,
+      payload
+    });
+
+    if (!response?.ok) {
+      throw new Error(response?.error || `HTTP ${response?.status || 'unknown'} ${response?.statusText || ''}`.trim());
+    }
+
+    const outputType = response.outputType || response.contentType || 'unknown output';
+    if (!response.bodyText) {
+      throw new Error('No XML body returned');
+    }
+
+    const templateInfo = extractTemplateInfo(response.bodyText);
+    if (templateInfo) {
+      const dateSuffix = getDayKey();
+      const safeBaseName = (downloadBaseName || 'IBI Report').replace(/[\\/:*?"<>|]/g, '_').trim();
+      const datedFileName = `${safeBaseName} ${dateSuffix}.xlsx`;
+
+      const downloadResponse = await safeSendMessage({
+        type: 'IBI_TEST_DOWNLOAD_EXCEL',
+        url: IBI_TEST_URL,
+        filename: datedFileName,
+        fields: {
+          IBIMR_action: 'MR_RUN_FEX',
+          IBIMR_sub_action: 'MR_STD_REPORT',
+          IBIMR_drill: 'RUNNID',
+          IBIMR_folder: '#guidedadhocy',
+          IBIMR_domain: 'commonto/commonto.htm',
+          IBIMR_fex: FINAL_FEX,
+          P_INSTANCE: 'ERP',
+          WFFMT: 'EXL07',
+          wffmt_hidden: 'EXL07',
+          P_GAH_CODE: GAH_CODE,
+          P_TEMPLATE_ID: templateInfo.templateId,
+          template_id_hidden: templateInfo.templateId,
+          P_TEMPLATE_STRING: templateInfo.templateString,
+          tmplt_string_hidden: templateInfo.templateString,
+          P_REPORT_TILE: templateInfo.templateName || 'MES IBI Report',
+          P_REPORT_TITLE: templateInfo.templateName || 'MES IBI Report'
+        }
+      });
+
+      if (!downloadResponse?.ok) {
+        throw new Error(downloadResponse?.error || `Download failed (${downloadResponse?.status || 'unknown'})`);
+      }
+
+      showSerialScanToast(`Excel download started: ${downloadResponse.filename || 'IBI_Report.xlsx'}`, true);
+    } else {
+      throw new Error('Template data not found in XML response');
+    }
+
+    showSerialScanToast(`IBI test POST succeeded (${response.status}) ${outputType}`, true);
+    if (response.bodyPreview) {
+      console.log('IBI test response preview:', response.bodyPreview);
+    }
+  } catch (error) {
+    console.error('IBI test POST failed:', error);
+    showSerialScanToast(`IBI test POST failed: ${error?.message || String(error)}`, false);
+  }
+}
+
+async function runInventoryReportal() {
+  const payload = `IBIMR_action=MR_RUN_FEX&IBIMR_sub_action=MR_STD_REPORT&IBIMR_drill=RUNNID&IBIMR_folder=%23guidedadhocy&IBIMR_domain=commonto/commonto.htm&IBIMR_fex=app/wwt_guided_ad_hoc_otf_ajax_fex.fex&P_INSTANCE=ERP&P_SELECT_STATEMENTS=TEMPLATE_NAME,TEMPLATE_HEADER||'(}'||TEMPLATE_SEGMENTS||'(}'||nvl(TEMPLATE_ORDERBY,'NONE')||'(}'||nvl(REPORT_TITLE,'NONE')||'(}'||TEMPLATE_ID&P_LOOKUP_V=TEMPLATE_LOOKUP_V&P_USER_WHERE=FOC_NONE&P_WHERE_STATEMENTS=and business_unit = 'NAIC1%20Inventory' and gah_code = '1083900'&P_GAH_CODE=1083900`;
+  return runIbiReportal({
+    lookupPayload: payload,
+    targetTemplateName: 'Org 40 at NAIC1',
+    downloadBaseName: 'Inventory GAH'
+  });
+}
+
+async function runOutboundReportal() {
+  const payload = `IBIMR_action=MR_RUN_FEX&IBIMR_sub_action=MR_STD_REPORT&IBIMR_drill=RUNNID&IBIMR_folder=%23guidedadhocy&IBIMR_domain=commonto/commonto.htm&IBIMR_fex=app/wwt_guided_ad_hoc_otf_ajax_fex.fex&P_INSTANCE=ERP&P_SELECT_STATEMENTS=TEMPLATE_NAME,TEMPLATE_HEADER||'(}'||TEMPLATE_SEGMENTS||'(}'||nvl(TEMPLATE_ORDERBY,'NONE')||'(}'||nvl(REPORT_TITLE,'NONE')||'(}'||TEMPLATE_ID&P_LOOKUP_V=TEMPLATE_LOOKUP_V&P_USER_WHERE=FOC_NONE&P_WHERE_STATEMENTS=and business_unit = 'Outbound' and gah_code = '1083900'&P_GAH_CODE=1083900`;
+  return runIbiReportal({
+    lookupPayload: payload,
+    targetTemplateName: 'Yee NAIC1',
+    downloadBaseName: 'Outbound GAH'
+  });
+}
+
 // ===== TOOLS MENU EVENT HANDLER =====
 document.addEventListener('click', (e) => {
   const applyStyleButton = e.target.closest('#mes-btn-style-apply');
@@ -2154,6 +2281,10 @@ document.addEventListener('click', (e) => {
     moTrackerStatusUpdater();
   } else if (tool === 'ib-update-tracker') {
     runIBUpdateTracker();
+  } else if (tool === 'inventory-reportal') {
+    runInventoryReportal();
+  } else if (tool === 'outbound-reportal') {
+    runOutboundReportal();
   } else if (tool === 'serial-scan-lsc') {
     runSerialScan('LSC');
   } else if (tool === 'serial-scan-ibc') {

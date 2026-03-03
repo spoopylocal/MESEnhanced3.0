@@ -307,6 +307,155 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     }
 
+    if (message?.type === "IBI_TEST_POST") {
+      try {
+        const response = await fetch(message.url, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+          },
+          body: message.payload || ''
+        });
+
+        const text = await response.text().catch(() => '');
+        return {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          outputType: response.headers.get('X-IBI-OutputType') || '',
+          contentType: response.headers.get('Content-Type') || '',
+          bodyText: text,
+          bodyPreview: text.slice(0, 500)
+        };
+      } catch (error) {
+        return { ok: false, error: error?.message || String(error) };
+      }
+    }
+
+    if (message?.type === "IBI_TEST_DOWNLOAD_EXCEL") {
+      try {
+        const fields = message?.fields && typeof message.fields === 'object' ? message.fields : {};
+        const payload = new URLSearchParams(
+          Object.entries(fields).reduce((acc, [key, value]) => {
+            acc[key] = value == null ? '' : String(value);
+            return acc;
+          }, {})
+        ).toString();
+
+        const response = await fetch(message.url, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+          },
+          body: payload
+        });
+
+        const contentType = response.headers.get('Content-Type') || '';
+        const outputType = response.headers.get('X-IBI-OutputType') || '';
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => '');
+          return {
+            ok: false,
+            status: response.status,
+            statusText: response.statusText,
+            outputType,
+            contentType,
+            error: errorText.slice(0, 500) || `HTTP ${response.status} ${response.statusText}`
+          };
+        }
+
+        let downloadResponse = response;
+        let downloadContentType = contentType;
+        let wrapperPreview = '';
+
+        if (/text\/html/i.test(contentType)) {
+          const html = await response.text().catch(() => '');
+          wrapperPreview = html.slice(0, 500);
+
+          const redirectMatch = html.match(/location\.replace\((['"])([^'"]+)\1\)/i);
+          const binaryPath = redirectMatch?.[2] || '';
+
+          if (binaryPath) {
+            const binaryUrl = new URL(binaryPath, message.url).toString();
+            downloadResponse = await fetch(binaryUrl, {
+              method: 'GET',
+              credentials: 'include'
+            });
+            downloadContentType = downloadResponse.headers.get('Content-Type') || '';
+
+            if (!downloadResponse.ok) {
+              const redirectError = await downloadResponse.text().catch(() => '');
+              return {
+                ok: false,
+                status: downloadResponse.status,
+                statusText: downloadResponse.statusText,
+                outputType,
+                contentType: downloadContentType,
+                error: redirectError.slice(0, 500) || `GETBINARY failed: HTTP ${downloadResponse.status}`
+              };
+            }
+          } else if (!/EXL07|excel/i.test(outputType)) {
+            return {
+              ok: false,
+              status: response.status,
+              statusText: response.statusText,
+              outputType,
+              contentType,
+              error: wrapperPreview || 'Server returned HTML without Excel redirect'
+            };
+          }
+        }
+
+        if (/text\/xml/i.test(downloadContentType) && !/EXL07|excel/i.test(outputType)) {
+          const maybeError = await downloadResponse.text().catch(() => '');
+          return {
+            ok: false,
+            status: downloadResponse.status,
+            statusText: downloadResponse.statusText,
+            outputType,
+            contentType: downloadContentType,
+            error: maybeError.slice(0, 500) || 'Server returned XML instead of Excel file'
+          };
+        }
+
+        const blob = await downloadResponse.blob();
+        const buffer = await blob.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        const chunkSize = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.subarray(i, i + chunkSize);
+          binary += String.fromCharCode(...chunk);
+        }
+        const base64 = btoa(binary);
+        const mime = downloadContentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        const dataUrl = `data:${mime};base64,${base64}`;
+        const rawName = String(message.filename || 'IBI_Report.xlsx');
+        const filename = rawName.toLowerCase().endsWith('.xlsx') ? rawName : `${rawName}.xlsx`;
+
+        const downloadId = await chrome.downloads.download({
+          url: dataUrl,
+          filename,
+          saveAs: false,
+          conflictAction: 'uniquify'
+        });
+
+        return {
+          ok: true,
+          status: downloadResponse.status,
+          outputType,
+          contentType: downloadContentType,
+          downloadId,
+          filename
+        };
+      } catch (error) {
+        return { ok: false, error: error?.message || String(error) };
+      }
+    }
+
     if (message?.type === "SCAN_ORDER") {
       console.log('SCAN_ORDER request received:', message.jobHeaderId);
       try {
