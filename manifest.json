@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "MES Enhanced 3.0",
-  "version": "3.1.6",
+  "version": "3.1.7",
   "description": "Enhanced MES tools: copy buttons, asset downloads, MO tracking, serial checkers (LSC/IBC), and auto-filled placards.",
   "permissions": [
     "downloads",
     "alarms",
-    "storage"
+    "storage",
+    "tabs"
   ],
   "host_permissions": [
     "https://apirouter.apps.wwt.com/*",

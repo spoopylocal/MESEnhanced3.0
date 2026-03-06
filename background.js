@@ -494,6 +494,27 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return { ok: false, error: error.message };
       }
     }
+
+    if (message?.type === "OPEN_REPORTAL_INTRO") {
+      try {
+        const tab = await chrome.tabs.create({
+          url: 'https://reports.wwt.com/',
+          active: true
+        });
+        
+        // Close the tab after 5 seconds
+        setTimeout(() => {
+          chrome.tabs.remove(tab.id).catch(err => {
+            console.log('Tab already closed or error closing:', err);
+          });
+        }, 5000);
+        
+        return { ok: true, tabId: tab.id };
+      } catch (error) {
+        console.error('Error opening reportal intro tab:', error);
+        return { ok: false, error: error?.message || String(error) };
+      }
+    }
   };
 
   // Execute async handler and send response

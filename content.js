@@ -2124,6 +2124,32 @@ async function runIBUpdateTracker() {
   }
 }
 
+// Helper function to check and open reportal intro tab if needed
+async function checkAndOpenReportalIntro() {
+  const REPORTAL_LAST_OPENED_KEY = 'mes-reportal-last-opened';
+  const EIGHT_HOURS_MS = 8 * 60 * 60 * 1000; // 8 hours in milliseconds
+  
+  try {
+    const stored = localStorage.getItem(REPORTAL_LAST_OPENED_KEY);
+    const lastOpened = stored ? parseInt(stored, 10) : 0;
+    const now = Date.now();
+    
+    // Check if 8 hours have passed since last opening
+    if (now - lastOpened >= EIGHT_HOURS_MS) {
+      // Update the timestamp before opening to prevent duplicate opens
+      localStorage.setItem(REPORTAL_LAST_OPENED_KEY, String(now));
+      
+      // Send message to background script to open and close the tab
+      await safeSendMessage({
+        type: 'OPEN_REPORTAL_INTRO'
+      });
+    }
+  } catch (error) {
+    console.error('Error checking reportal intro:', error);
+    // Don't throw - continue with normal reportal execution
+  }
+}
+
 async function runIbiReportal({ lookupPayload, targetTemplateName, downloadBaseName }) {
   const IBI_TEST_URL = 'https://reports.wwt.com/ibi_apps/WFServlet';
   const FINAL_FEX = 'app/wwt_gah_direct.fex';
@@ -2231,6 +2257,9 @@ async function runIbiReportal({ lookupPayload, targetTemplateName, downloadBaseN
 }
 
 async function runInventoryReportal() {
+  // Check and open reportal intro tab if needed
+  await checkAndOpenReportalIntro();
+  
   const payload = `IBIMR_action=MR_RUN_FEX&IBIMR_sub_action=MR_STD_REPORT&IBIMR_drill=RUNNID&IBIMR_folder=%23guidedadhocy&IBIMR_domain=commonto/commonto.htm&IBIMR_fex=app/wwt_guided_ad_hoc_otf_ajax_fex.fex&P_INSTANCE=ERP&P_SELECT_STATEMENTS=TEMPLATE_NAME,TEMPLATE_HEADER||'(}'||TEMPLATE_SEGMENTS||'(}'||nvl(TEMPLATE_ORDERBY,'NONE')||'(}'||nvl(REPORT_TITLE,'NONE')||'(}'||TEMPLATE_ID&P_LOOKUP_V=TEMPLATE_LOOKUP_V&P_USER_WHERE=FOC_NONE&P_WHERE_STATEMENTS=and business_unit = 'NAIC1%20Inventory' and gah_code = '1083900'&P_GAH_CODE=1083900`;
   return runIbiReportal({
     lookupPayload: payload,
@@ -2240,6 +2269,9 @@ async function runInventoryReportal() {
 }
 
 async function runOutboundReportal() {
+  // Check and open reportal intro tab if needed
+  await checkAndOpenReportalIntro();
+  
   const payload = `IBIMR_action=MR_RUN_FEX&IBIMR_sub_action=MR_STD_REPORT&IBIMR_drill=RUNNID&IBIMR_folder=%23guidedadhocy&IBIMR_domain=commonto/commonto.htm&IBIMR_fex=app/wwt_guided_ad_hoc_otf_ajax_fex.fex&P_INSTANCE=ERP&P_SELECT_STATEMENTS=TEMPLATE_NAME,TEMPLATE_HEADER||'(}'||TEMPLATE_SEGMENTS||'(}'||nvl(TEMPLATE_ORDERBY,'NONE')||'(}'||nvl(REPORT_TITLE,'NONE')||'(}'||TEMPLATE_ID&P_LOOKUP_V=TEMPLATE_LOOKUP_V&P_USER_WHERE=FOC_NONE&P_WHERE_STATEMENTS=and business_unit = 'Outbound' and gah_code = '1083900'&P_GAH_CODE=1083900`;
   return runIbiReportal({
     lookupPayload: payload,

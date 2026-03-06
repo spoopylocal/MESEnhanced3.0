@@ -1,9 +1,9 @@
 {
-  "latestVersion": "3.1.4",
+  "latestVersion": "3.1.7",
   "downloadUrl": "https://chromewebstore.google.com/search/MES%20Enhanced%203.0",
   "notes": [
-    "Security update: removed hardcoded sheet token",
-    "Added button style customization (primary, hover, text)",
-    "Defaulted to clean hover-only button animation"
+    "Added reportal buttons functionality",
+    "Enhanced button interactions and styling",
+    "Performance improvements"
   ]
 }
