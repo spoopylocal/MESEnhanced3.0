@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MES Enhanced 3.0",
-  "version": "3.1.7",
+  "version": "3.1.8",
   "description": "Enhanced MES tools: copy buttons, asset downloads, MO tracking, serial checkers (LSC/IBC), and auto-filled placards.",
   "permissions": [
     "downloads",
