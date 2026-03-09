@@ -14,6 +14,8 @@ const COPY_WO_BUTTON_CLASS = "mes-copy-wo-btn";
 const COPY_ASSET_BUTTON_CLASS = "mes-copy-asset-btn";
 const COPY_SR_BUTTON_CLASS = "mes-copy-sr-btn";
 const WRAPPER_CLASS = "mes-pn-wrapper";
+const LPN_DROPDOWN_BUTTON_CLASS = "mes-lpn-dropdown-btn";
+const LPN_EXPANDED_ROW_CLASS = "mes-lpn-expanded-row";
 const BUTTON_SETTINGS_STORAGE_KEY = "mes-button-settings-v1";
 const UPDATE_DISMISSED_KEY = "mes-update-dismissed-version";
 const UPDATE_LAST_PROMPTED_KEY = "mes-update-last-prompted-day";
@@ -24,6 +26,8 @@ const DEFAULT_BUTTON_SETTINGS = {
 };
 
 let currentButtonSettings = { ...DEFAULT_BUTTON_SETTINGS };
+let lpnContentsCache = {}; // Store LPN contents data
+let lpnContentsFetched = false; // Track if initial fetch has been done
 
 // Helper function to check if extension context is still valid
 function isExtensionContextValid() {
@@ -300,6 +304,15 @@ const createCopyLpnLocationButton = (locText) => {
   return button;
 };
 
+const createLpnDropdownButton = () => {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = LPN_DROPDOWN_BUTTON_CLASS;
+  button.innerHTML = `<svg data-size="sm" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 16 16"><path fill="currentColor" d="M8.048 13.375a.745.745 0 0 1-.526-.217L0 5.686l1.053-1.061 6.995 6.95 6.897-6.85 1.053 1.06-7.423 7.373a.745.745 0 0 1-.527.217Z"></path></svg>`;
+  button.setAttribute("aria-label", "Toggle LPN contents");
+  return button;
+};
+
 const createRefreshLpnButton = () => {
   const button = document.createElement("button");
   button.type = "button";
@@ -308,6 +321,161 @@ const createRefreshLpnButton = () => {
   button.setAttribute("aria-label", "Refresh LPN information");
   button.addEventListener("click", refreshLpnData);
   return button;
+};
+
+// Fetch contents for a single LPN
+const fetchLpnContents = async (lpn, orgId = "3346") => {
+  try {
+    const url = `https://apirouter.apps.wwt.com/api/forward/inventory-scan-api/lpn/${lpn}/${orgId}/contents`;
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      console.error(`Failed to fetch LPN contents for ${lpn}: ${response.status}`);
+      return null; // Return null to indicate failure
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error(`Error fetching LPN contents for ${lpn}:`, error);
+    return null; // Return null to indicate failure
+  }
+};
+
+// Fetch all LPN contents
+const fetchAllLpnContents = async () => {
+  if (lpnContentsFetched) {
+    console.log('LPN contents already fetched, skipping...');
+    return;
+  }
+  
+  lpnContentsFetched = true;
+  
+  const lpnRows = document.querySelectorAll("#wo-lpn-body > tr:not(.mes-lpn-expanded-row)");
+  const lpns = Array.from(lpnRows).map(row => {
+    const lpnCell = row.querySelector("td:nth-child(2)"); // Now second cell since dropdown is first
+    return lpnCell?.querySelector(".mes-pn-text")?.textContent?.trim() || lpnCell?.textContent?.trim();
+  }).filter(Boolean);
+  
+  console.log(`Pre-fetching contents for ${lpns.length} LPNs...`);
+  
+  // Fetch all LPN contents in parallel
+  const results = await Promise.all(
+    lpns.map(async (lpn) => {
+      const contents = await fetchLpnContents(lpn);
+      return { lpn, contents };
+    })
+  );
+  
+  // Store in cache - only cache successful fetches (non-null)
+  results.forEach(({ lpn, contents }) => {
+    if (contents !== null) {
+      lpnContentsCache[lpn] = contents;
+    }
+  });
+  
+  const successCount = Object.keys(lpnContentsCache).length;
+  const failCount = lpns.length - successCount;
+  console.log(`Cached ${successCount} LPNs, ${failCount} failed (will retry on open)`);
+};
+
+// Render LPN contents in expanded row
+const renderLpnContents = (contents, isLoading = false) => {
+  if (isLoading) {
+    return '<div class="mes-lpn-no-contents">Loading contents...</div>';
+  }
+  
+  if (!contents || contents.length === 0) {
+    return '<div class="mes-lpn-no-contents">No contents found</div>';
+  }
+  
+  let html = '<div class="mes-lpn-contents">';
+  html += '<table class="mes-lpn-contents-table">';
+  html += '<thead><tr><th>Item</th><th>Qty</th><th>Inner LPN</th><th>Locator</th></tr></thead>';
+  html += '<tbody>';
+  
+  // Display each item individually without grouping
+  contents.forEach(item => {
+    const itemName = item.item || item.shortItem || '';
+    const qty = item.quantity || 0;
+    const lpn = item.licensePlateNumber || '';
+    const locator = item.locator || '';
+    
+    html += `<tr>
+      <td>${itemName}</td>
+      <td>${qty}</td>
+      <td class="mes-lpn-mini">${lpn}</td>
+      <td>${locator}</td>
+    </tr>`;
+  });
+  
+  html += '</tbody></table>';
+  html += '</div>';
+  
+  return html;
+};
+
+// Toggle LPN dropdown
+const toggleLpnDropdown = async (button, lpn) => {
+  const row = button.closest('tr');
+  const isExpanded = button.classList.contains('expanded');
+  
+  // Close all other expanded rows
+  document.querySelectorAll(`.${LPN_DROPDOWN_BUTTON_CLASS}.expanded`).forEach(btn => {
+    if (btn !== button) {
+      btn.classList.remove('expanded');
+      const otherRow = btn.closest('tr');
+      const expandedRow = otherRow.nextElementSibling;
+      if (expandedRow && expandedRow.classList.contains(LPN_EXPANDED_ROW_CLASS)) {
+        expandedRow.remove();
+      }
+    }
+  });
+  
+  if (isExpanded) {
+    // Close this row
+    button.classList.remove('expanded');
+    const expandedRow = row.nextElementSibling;
+    if (expandedRow && expandedRow.classList.contains(LPN_EXPANDED_ROW_CLASS)) {
+      expandedRow.remove();
+    }
+  } else {
+    // Open this row
+    button.classList.add('expanded');
+    
+    // Create expanded row
+    const expandedRow = document.createElement('tr');
+    expandedRow.className = LPN_EXPANDED_ROW_CLASS;
+    
+    // Check if data is cached
+    if (lpnContentsCache.hasOwnProperty(lpn)) {
+      // Use cached data
+      expandedRow.innerHTML = `<td colspan="100">${renderLpnContents(lpnContentsCache[lpn])}</td>`;
+      row.parentNode.insertBefore(expandedRow, row.nextSibling);
+    } else {
+      // Not in cache (failed on page load), fetch now
+      expandedRow.innerHTML = `<td colspan="100">${renderLpnContents(null, true)}</td>`;
+      row.parentNode.insertBefore(expandedRow, row.nextSibling);
+      
+      // Fetch the data
+      const contents = await fetchLpnContents(lpn);
+      
+      // Cache successful fetches
+      if (contents !== null) {
+        lpnContentsCache[lpn] = contents;
+        expandedRow.innerHTML = `<td colspan="100">${renderLpnContents(contents)}</td>`;
+      } else {
+        // Still failed, show empty
+        expandedRow.innerHTML = `<td colspan="100">${renderLpnContents([])}</td>`;
+      }
+    }
+  }
 };
 
 const createCopyAllLpnButton = () => {
@@ -448,17 +616,44 @@ const wrapLpnLocationCell = (cell) => {
 };
 
 const enhanceLpnTable = () => {
-  const lpnRows = document.querySelectorAll("#wo-lpn-body tr");
+  const lpnRows = document.querySelectorAll("#wo-lpn-body > tr:not(.mes-lpn-expanded-row)");
   lpnRows.forEach((row) => {
+    // Check if dropdown button already exists
+    if (row.querySelector(`.${LPN_DROPDOWN_BUTTON_CLASS}`)) {
+      return;
+    }
+    
     const lpnCell = row.querySelector("td:nth-child(1)");
     const locCell = row.querySelector("td:nth-child(2)");
-    if (lpnCell) {
-      wrapLpnCell(lpnCell);
+    
+    // Get LPN text before wrapping
+    const lpnText = lpnCell?.textContent?.trim();
+    
+    // Add dropdown button as first cell
+    if (lpnText) {
+      const dropdownCell = document.createElement("td");
+      dropdownCell.setAttribute("data-v-512c6e58", "");
+      const dropdownButton = createLpnDropdownButton();
+      dropdownButton.addEventListener("click", () => toggleLpnDropdown(dropdownButton, lpnText));
+      dropdownCell.appendChild(dropdownButton);
+      row.insertBefore(dropdownCell, row.firstChild);
     }
-    if (locCell) {
-      wrapLpnLocationCell(locCell);
+    
+    // Now wrap the LPN cell (which is now at index 2)
+    const updatedLpnCell = row.querySelector("td:nth-child(2)");
+    if (updatedLpnCell) {
+      wrapLpnCell(updatedLpnCell);
+    }
+    
+    // Wrap location cell (now at index 3)
+    const updatedLocCell = row.querySelector("td:nth-child(3)");
+    if (updatedLocCell) {
+      wrapLpnLocationCell(updatedLocCell);
     }
   });
+  
+  // Pre-fetch all LPN contents on page load
+  fetchAllLpnContents();
 };
 
 const collectAllPnValues = () => {
@@ -490,18 +685,18 @@ const collectAllPnQtyValues = () => {
 };
 
 const collectAllLpnValues = () => {
-  const lpnCells = document.querySelectorAll("#wo-lpn-body td:nth-child(1)");
+  const lpnCells = document.querySelectorAll("#wo-lpn-body > tr:not(.mes-lpn-expanded-row) > td:nth-child(2)"); // Second cell now (after dropdown)
   return Array.from(lpnCells)
     .map((cell) => cell.querySelector(".mes-pn-text")?.textContent?.trim() || cell.textContent?.trim())
     .filter(Boolean);
 };
 
 const collectAllLpnLocationValues = () => {
-  const lpnRows = document.querySelectorAll("#wo-lpn-body tr");
+  const lpnRows = document.querySelectorAll("#wo-lpn-body > tr:not(.mes-lpn-expanded-row)");
   return Array.from(lpnRows)
     .map((row) => {
-      const lpnCell = row.querySelector("td:nth-child(1)");
-      const locCell = row.querySelector("td:nth-child(2)");
+      const lpnCell = row.querySelector("td:nth-child(2)"); // Second cell now (after dropdown)
+      const locCell = row.querySelector("td:nth-child(3)"); // Third cell now
       const lpnText = lpnCell?.querySelector(".mes-pn-text")?.textContent?.trim() || lpnCell?.textContent?.trim();
       const locTextRaw = locCell?.querySelector(".mes-pn-text")?.textContent?.trim() || locCell?.textContent?.trim();
       const locText = locTextRaw ? normalizeLocationText(locTextRaw) : "";
@@ -638,6 +833,11 @@ const refreshLpnData = async () => {
 
       // Re-enhance the table with copy buttons
       enhanceLpnTable();
+      
+      // Clear cache and re-fetch LPN contents
+      lpnContentsCache = {};
+      lpnContentsFetched = false; // Reset flag to allow re-fetch
+      fetchAllLpnContents();
     }
 
     if (refreshBtn) {
