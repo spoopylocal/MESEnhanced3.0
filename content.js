@@ -1423,19 +1423,86 @@ const moAutoPrmCopy = async () => {
     return m ? m[0] : null;
   }
 
-  async function getMostRecentPrmIdFromMsf(msfCode) {
+  function normalizeTemplateName(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  async function getMostRecentPrmIdFromMsf(msfCode, serviceTemplateName = '') {
     const url = `${BASE_PRM_SEARCH}/buildConfigVersion/search?prmname=${encodeURIComponent(msfCode)}&status=Published`;
     const arr = await fetchJson(url);
     if (!Array.isArray(arr) || arr.length === 0) return null;
-    const published = arr.filter(x => x.status?.status === 'Published');
+    const published = arr
+      .filter((x) => {
+        const statusValue = typeof x.status === 'string' ? x.status : x.status?.status;
+        return statusValue === 'Published';
+      })
+      .sort((a, b) => (b.version || 0) - (a.version || 0));
     if (published.length === 0) return null;
-    let best = published[0];
-    for (const item of published.slice(1)) {
-      if ((item.version || 0) > (best.version || 0)) {
-        best = item;
+
+    const normalizedTemplate = normalizeTemplateName(serviceTemplateName);
+    const wantsSwap = /\bswap\b/i.test(serviceTemplateName || '');
+
+    const candidates = await Promise.all(
+      published.map(async (item) => {
+        let candidateTemplate = item.buildConfig?.buildName || item.buildConfig?.prmName || item.prmName || '';
+        if (!candidateTemplate && item.id) {
+          try {
+            const details = await fetchJson(`${BASE_PRM_BUILD}/buildConfigVersion/${encodeURIComponent(item.id)}`);
+            candidateTemplate = details.buildConfig?.buildName || details.buildConfig?.prmName || '';
+          } catch {
+            candidateTemplate = '';
+          }
+        }
+
+        return {
+          id: item.id || null,
+          version: item.version || 0,
+          template: candidateTemplate,
+          normalized: normalizeTemplateName(candidateTemplate),
+          isSwap: /\bswap\b/i.test(candidateTemplate)
+        };
+      })
+    );
+
+    const preferredBySwap = candidates
+      .filter(c => c.id)
+      .filter(c => c.isSwap === wantsSwap)
+      .sort((a, b) => b.version - a.version);
+
+    if (!normalizedTemplate) {
+      if (preferredBySwap.length > 0) {
+        return preferredBySwap[0].id;
       }
+      return published[0].id || null;
     }
-    return best.id || null;
+
+    const exactMatch = preferredBySwap.find(c => c.normalized === normalizedTemplate)
+      || candidates.find(c => c.id && c.normalized === normalizedTemplate);
+    if (exactMatch) {
+      return exactMatch.id;
+    }
+
+    const partialMatch = preferredBySwap.find(
+      c => c.normalized && (c.normalized.includes(normalizedTemplate) || normalizedTemplate.includes(c.normalized))
+    ) || candidates.find(
+      c => c.id && c.normalized && (c.normalized.includes(normalizedTemplate) || normalizedTemplate.includes(c.normalized))
+    );
+    if (partialMatch) {
+      return partialMatch.id;
+    }
+
+    if (preferredBySwap.length > 0) {
+      return preferredBySwap[0].id;
+    }
+
+    console.warn(
+      `[MO PRM] No template match found for ${msfCode}. Service Template: "${serviceTemplateName}". Falling back to latest published PRM.`
+    );
+    return published[0].id || null;
+  }
+
+  async function getWorkOrderInfo(jobHeaderId) {
+    return fetchJson(`${BASE_MES}/workOrderInfo?jobHeaderId=${encodeURIComponent(jobHeaderId)}`);
   }
 
   function parseMoInput(raw) {
@@ -1464,6 +1531,7 @@ const moAutoPrmCopy = async () => {
     if (!wo) return { mo, line: `${mo}\t\t(No work order found)\t\tN/A`, ok: false };
     
     let { documentNumber, jobHeaderId, prmId } = wo;
+    let workOrderInfo = null;
     
     if (!prmId) {
       showToast(`No PRM on ${mo}, trying to add…`, false);
@@ -1471,8 +1539,18 @@ const moAutoPrmCopy = async () => {
       if (!msfCode) {
         return { mo, line: `${mo}\t${documentNumber || ''}\t(Could not find MSF code)\t\tN/A`, ok: false };
       }
+
+      let serviceTemplateName = wo.serviceTemplateName || '';
+      if (!serviceTemplateName) {
+        try {
+          workOrderInfo = await getWorkOrderInfo(jobHeaderId);
+          serviceTemplateName = workOrderInfo?.serviceTemplateName || '';
+        } catch {
+          serviceTemplateName = '';
+        }
+      }
       
-      const newPrmId = await getMostRecentPrmIdFromMsf(msfCode);
+      const newPrmId = await getMostRecentPrmIdFromMsf(msfCode, serviceTemplateName);
       if (!newPrmId) {
         return { mo, line: `${mo}\t${documentNumber || ''}\t(No Published PRM for ${msfCode})\t\tN/A`, ok: false };
       }
@@ -1504,7 +1582,7 @@ const moAutoPrmCopy = async () => {
     const prmJson = await fetchJson(`${BASE_PRM_BUILD}/buildConfigVersion/${encodeURIComponent(prmId)}`);
     const buildName = prmJson.buildConfig?.buildName || prmJson.buildConfig?.prmName || '(Build name not found)';
     
-    const woInfo = await fetchJson(`${BASE_MES}/workOrderInfo?jobHeaderId=${encodeURIComponent(jobHeaderId)}`);
+    const woInfo = workOrderInfo || await getWorkOrderInfo(jobHeaderId);
     const buildDue = formatBuildDueDate(woInfo);
     
     const line = `${mo}\t${documentNumber || ''}\t${buildName}\t\t${buildDue}`;
