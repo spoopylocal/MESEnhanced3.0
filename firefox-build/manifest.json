@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "MES Enhanced 3.0",
-  "version": "3.1.9",
-  "description": "Enhanced MES tools: copy buttons, asset downloads, MO tracking, serial checkers (LSC/IBC), and auto-filled placards.",
+  "name": "MES Enhanced 3.0 Public",
+  "version": "3.2.0",
+  "description": "Firefox build with MES copy enhancements and button color customization.",
   "permissions": [
     "downloads",
     "alarms",
@@ -17,7 +17,7 @@
     "https://raw.githubusercontent.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "scripts": ["background.js"]
   },
   "content_scripts": [
     {
@@ -27,10 +27,16 @@
       "run_at": "document_idle"
     }
   ],
-  "web_accessible_resources": [
-    {
-      "resources": ["xlsx.full.min.js", "exceljs.bare.min.js"],
-      "matches": ["https://mes.apps.wwt.com/*"]
+  "web_accessible_resources": [],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "mesenhanced3-firefox@wwt.local",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ],
+        "optional": []
+      }
     }
-  ]
+  }
 }
