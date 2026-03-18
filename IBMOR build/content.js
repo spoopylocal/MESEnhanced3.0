@@ -25,6 +25,10 @@ const DEFAULT_BUTTON_SETTINGS = {
   textColor: "#ffffff"
 };
 
+const MES_FORWARD_API_BASE = "https://apirouter.apps.wwt.com/api/forward/mes-api";
+const PRM_FORWARD_API_BASE = "https://apirouter.apps.wwt.com/api/forward/prm-api";
+const WORK_ORDER_TOOLS_MODAL_ID = "mes-wo-tools-modal";
+
 let currentButtonSettings = { ...DEFAULT_BUTTON_SETTINGS };
 let lpnContentsCache = {}; // Store LPN contents data
 let lpnContentsFetched = false; // Track if initial fetch has been done
@@ -1232,6 +1236,836 @@ const handleCopyClick = async (event) => {
   }
 };
 
+const showWoToolsToast = (message, success = true) => {
+  const existing = document.getElementById("mes-wo-tools-toast");
+  if (existing) {
+    existing.remove();
+  }
+
+  const toast = document.createElement("div");
+  toast.id = "mes-wo-tools-toast";
+  toast.textContent = message;
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    padding: 6px 10px;
+    background: ${success ? "#2e7d32" : "#c62828"};
+    color: #fff;
+    font-size: 12px;
+    font-family: system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    border-radius: 4px;
+    z-index: 2147483647;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    opacity: 0;
+    transition: opacity .2s ease;
+  `;
+
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => {
+    toast.style.opacity = "1";
+  });
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    setTimeout(() => toast.remove(), 220);
+  }, 2600);
+};
+
+const closeWorkOrderToolsModal = () => {
+  document.getElementById(WORK_ORDER_TOOLS_MODAL_ID)?.remove();
+};
+
+const normalizeWoToken = (token) => {
+  const raw = String(token || "").trim();
+  if (!raw) {
+    return null;
+  }
+
+  const upper = raw.toUpperCase();
+  const cleaned = upper.replace(/[^A-Z0-9#-]/g, "");
+  const woTrimmed = cleaned.replace(/^WO[#-]?/, "");
+  const digits = woTrimmed.replace(/\D/g, "");
+
+  return {
+    raw,
+    upper,
+    cleaned,
+    woTrimmed,
+    digits
+  };
+};
+
+const parseWorkOrderInputTokens = (raw) => {
+  const parts = String(raw || "")
+    .split(/[\s,;]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const result = [];
+  const seen = new Set();
+
+  for (const part of parts) {
+    const normalized = normalizeWoToken(part);
+    if (!normalized) {
+      continue;
+    }
+
+    const dedupeKey = normalized.cleaned || normalized.upper;
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+
+    seen.add(dedupeKey);
+    result.push(normalized);
+  }
+
+  return result;
+};
+
+const fetchMesJson = async (url, options = {}) => {
+  const response = await fetch(url, {
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      ...(options.headers || {})
+    },
+    ...options
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`HTTP ${response.status} for ${url}: ${body.slice(0, 220)}`);
+  }
+
+  return response.json();
+};
+
+const buildWorkOrderPatchPayload = (wo, prmId) => ({
+  orderTypeCode: wo.orderTypeCode,
+  siteProject: wo.siteProject ?? null,
+  prodStatus: wo.prodStatus,
+  prodAssignmentGrp: wo.prodAssignmentGrp ?? null,
+  priority: wo.priority,
+  delayReasonCode: wo.delayReasonCode ?? null,
+  delayResponsibilityCode: wo.delayResponsibilityCode ?? null,
+  rootCauseCode: wo.rootCauseCode ?? null,
+  expediteFlag: wo.expediteFlag ?? "N",
+  btsFlag: wo.btsFlag ?? null,
+  crateOrderedFlag: wo.crateOrderedFlag ?? "N",
+  workstations: wo.workstations ?? null,
+  rootCauseDescription: wo.rootCauseDescription ?? null,
+  jobHeaderId: wo.jobHeaderId,
+  prmId
+});
+
+const updateWorkOrderPrm = async (wo, prmId) => {
+  const payload = buildWorkOrderPatchPayload(wo, prmId);
+
+  await fetchMesJson(`${MES_FORWARD_API_BASE}/updateWorkOrderHeader`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+};
+
+const fetchAllWorkOrders = async (onProgress = null) => {
+  const limit = 1000;
+  let offset = 0;
+  let page = 0;
+  const collected = [];
+
+  while (true) {
+    page += 1;
+    if (typeof onProgress === "function") {
+      onProgress(`Loading work orders (page ${page})...`);
+    }
+
+    const payload = {
+      limit,
+      offset,
+      releasedOnly: true,
+      includeCompPercent: true,
+      includeLocations: true,
+      includeOrderManager: true,
+      facilityCode: "WPC",
+      showUnassignedOnly: false,
+      orderBy: [
+        { orderField: "priority", orderDirection: "ASC" },
+        { orderField: "criticalRatio", orderDirection: "ASC" },
+        { orderField: "documentNumber", orderDirection: "ASC" }
+      ],
+      labArea: "L4"
+    };
+
+    const batch = await fetchMesJson(`${MES_FORWARD_API_BASE}/workOrders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!Array.isArray(batch) || batch.length === 0) {
+      break;
+    }
+
+    collected.push(...batch);
+
+    if (batch.length < limit) {
+      break;
+    }
+
+    offset += limit;
+
+    if (offset > 12000) {
+      break;
+    }
+  }
+
+  return collected;
+};
+
+const searchPublishedPrms = async (searchTerm = "") => {
+  const trimmed = String(searchTerm || "").trim();
+  const qs = new URLSearchParams({ status: "Published" });
+  if (trimmed) {
+    qs.set("prmname", trimmed);
+  }
+
+  const data = await fetchMesJson(`${PRM_FORWARD_API_BASE}/buildConfigVersion/search?${qs.toString()}`);
+  if (!Array.isArray(data)) {
+    return [];
+  }
+
+  return data
+    .filter((item) => {
+      const statusValue = typeof item.status === "string" ? item.status : item.status?.status;
+      return statusValue === "Published";
+    })
+    .map((item) => ({
+      id: item.id || "",
+      version: Number(item.version || 0),
+      prmName:
+        item.buildConfig?.prmName ||
+        item.buildConfig?.buildName ||
+        item.prmName ||
+        "(Unnamed PRM)",
+      customerName: item.buildConfig?.customerName || "",
+      integrationCenter: item.buildConfig?.integrationCenter || "",
+      segment4: item.buildConfig?.segment4 || ""
+    }))
+    .filter((item) => item.id)
+    .sort((a, b) => {
+      if (b.version !== a.version) {
+        return b.version - a.version;
+      }
+      return a.prmName.localeCompare(b.prmName);
+    })
+    .slice(0, 250);
+};
+
+const findWorkOrderByToken = (token, byDocument, byJobHeader) => {
+  const keysToTry = [token.upper, token.cleaned, token.woTrimmed].filter(Boolean);
+  for (const key of keysToTry) {
+    if (byDocument.has(key)) {
+      return byDocument.get(key);
+    }
+    if (byJobHeader.has(key)) {
+      return byJobHeader.get(key);
+    }
+  }
+
+  if (token.digits) {
+    const digitKeys = [token.digits, `WO${token.digits}`];
+    for (const key of digitKeys) {
+      if (byDocument.has(key)) {
+        return byDocument.get(key);
+      }
+      if (byJobHeader.has(key)) {
+        return byJobHeader.get(key);
+      }
+    }
+  }
+
+  return null;
+};
+
+const runBulkWorkOrderPrmUpdate = async ({ prmId, prmName, tokenInput, statusEl, applyButton }) => {
+  const tokens = parseWorkOrderInputTokens(tokenInput);
+  if (!prmId) {
+    throw new Error("Please select a PRM first.");
+  }
+  if (tokens.length === 0) {
+    throw new Error("No valid work order values found.");
+  }
+
+  const setStatus = (text) => {
+    statusEl.textContent = text;
+  };
+
+  applyButton.disabled = true;
+  setStatus("Loading work order list...");
+
+  const allWorkOrders = await fetchAllWorkOrders((message) => setStatus(message));
+  if (allWorkOrders.length === 0) {
+    throw new Error("No work orders were returned from MES.");
+  }
+
+  const byDocument = new Map();
+  const byJobHeader = new Map();
+
+  for (const wo of allWorkOrders) {
+    const doc = String(wo.documentNumber || "").trim().toUpperCase();
+    const job = String(wo.jobHeaderId || "").trim().toUpperCase();
+
+    if (doc) {
+      byDocument.set(doc, wo);
+      const docDigits = doc.replace(/\D/g, "");
+      if (docDigits) {
+        byDocument.set(docDigits, wo);
+        byDocument.set(`WO${docDigits}`, wo);
+      }
+    }
+
+    if (job) {
+      byJobHeader.set(job, wo);
+      const jobDigits = job.replace(/\D/g, "");
+      if (jobDigits) {
+        byJobHeader.set(jobDigits, wo);
+      }
+    }
+  }
+
+  const notFound = [];
+  const skipped = [];
+  const failed = [];
+  const updated = [];
+  const touched = new Set();
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    setStatus(`Updating ${i + 1} of ${tokens.length}...`);
+
+    const wo = findWorkOrderByToken(token, byDocument, byJobHeader);
+    if (!wo) {
+      notFound.push(token.raw);
+      continue;
+    }
+
+    const jobHeaderId = String(wo.jobHeaderId || "");
+    if (!jobHeaderId || touched.has(jobHeaderId)) {
+      skipped.push(token.raw);
+      continue;
+    }
+
+    touched.add(jobHeaderId);
+
+    if (String(wo.prmId || "") === String(prmId)) {
+      skipped.push(token.raw);
+      continue;
+    }
+
+    try {
+      await updateWorkOrderPrm(wo, prmId);
+      updated.push({
+        input: token.raw,
+        documentNumber: wo.documentNumber || "",
+        jobHeaderId
+      });
+    } catch (error) {
+      failed.push({
+        input: token.raw,
+        documentNumber: wo.documentNumber || "",
+        jobHeaderId,
+        error: error?.message || String(error)
+      });
+    }
+  }
+
+  const lines = [
+    `Selected PRM: ${prmName}`,
+    `Updated: ${updated.length}`,
+    `Skipped: ${skipped.length}`,
+    `Not found: ${notFound.length}`,
+    `Failed: ${failed.length}`
+  ];
+
+  if (notFound.length > 0) {
+    lines.push(`Not found list: ${notFound.slice(0, 20).join(", ")}`);
+  }
+
+  if (failed.length > 0) {
+    const firstErrors = failed
+      .slice(0, 5)
+      .map((x) => `${x.input} (${x.documentNumber || x.jobHeaderId}) -> ${x.error}`)
+      .join(" | ");
+    lines.push(`Errors: ${firstErrors}`);
+  }
+
+  setStatus(lines.join("\n"));
+
+  if (failed.length > 0) {
+    showWoToolsToast(`Bulk update completed with ${failed.length} error(s).`, false);
+  } else {
+    showWoToolsToast(`Bulk update complete. ${updated.length} WO(s) updated.`, true);
+  }
+
+  applyButton.disabled = false;
+};
+
+const openWorkOrderToolsModal = () => {
+  closeWorkOrderToolsModal();
+
+  const modal = document.createElement("div");
+  modal.id = WORK_ORDER_TOOLS_MODAL_ID;
+  modal.className = "mes-wo-tools-overlay";
+  modal.innerHTML = `
+    <div class="mes-wo-tools-modal" role="dialog" aria-modal="true" aria-labelledby="mes-wo-tools-title">
+      <div class="mes-wo-tools-header">
+        <h3 id="mes-wo-tools-title">WO Tools - Bulk PRM Update</h3>
+        <button type="button" class="mes-wo-tools-close" data-action="close">Close</button>
+      </div>
+
+      <div class="mes-wo-tools-body">
+        <label class="mes-wo-tools-label" for="mes-wo-tools-prm-name-input">PRM Name</label>
+        <div class="mes-wo-ms" id="mes-wo-prm-name-ms">
+          <div class="mes-wo-ms-control">
+            <input
+              id="mes-wo-tools-prm-name-input"
+              class="mes-wo-tools-input mes-wo-ms-input"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Select option"
+            />
+            <button type="button" class="mes-wo-ms-toggle" data-action="toggle-prm-name" aria-label="Toggle PRM Name options">▾</button>
+          </div>
+          <div class="mes-wo-ms-menu" id="mes-wo-tools-prm-name-menu">
+            <ul class="mes-wo-ms-list" id="mes-wo-tools-prm-name-list"></ul>
+          </div>
+        </div>
+
+        <label class="mes-wo-tools-label" for="mes-wo-tools-prm-rev-input">PRM Rev#</label>
+        <div class="mes-wo-ms" id="mes-wo-prm-rev-ms">
+          <div class="mes-wo-ms-control">
+            <input
+              id="mes-wo-tools-prm-rev-input"
+              class="mes-wo-tools-input mes-wo-ms-input"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Select PRM Rev#"
+              disabled
+            />
+            <button type="button" class="mes-wo-ms-toggle" data-action="toggle-prm-rev" aria-label="Toggle PRM revision options" disabled>▾</button>
+          </div>
+          <div class="mes-wo-ms-menu" id="mes-wo-tools-prm-rev-menu">
+            <ul class="mes-wo-ms-list" id="mes-wo-tools-prm-rev-list"></ul>
+          </div>
+        </div>
+
+        <label class="mes-wo-tools-label" for="mes-wo-tools-prm-rev-id">PRM Rev ID</label>
+        <div id="mes-wo-tools-prm-rev-id" class="mes-wo-tools-readonly">Not selected</div>
+
+        <label class="mes-wo-tools-label" for="mes-wo-tools-wo-input">Work Orders</label>
+        <textarea
+          id="mes-wo-tools-wo-input"
+          class="mes-wo-tools-textarea"
+          placeholder="Enter WO values separated by comma, space, or newline. Example: 1234, 5678 9012"
+        ></textarea>
+
+        <pre id="mes-wo-tools-status" class="mes-wo-tools-status">Ready.</pre>
+      </div>
+
+      <div class="mes-wo-tools-footer">
+        <button type="button" class="mes-wo-tools-btn" data-action="apply">Apply PRM to Work Orders</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const prmNameInput = modal.querySelector("#mes-wo-tools-prm-name-input");
+  const prmNameMenu = modal.querySelector("#mes-wo-tools-prm-name-menu");
+  const prmNameList = modal.querySelector("#mes-wo-tools-prm-name-list");
+  const prmNameWrapper = modal.querySelector("#mes-wo-prm-name-ms");
+
+  const prmRevInput = modal.querySelector("#mes-wo-tools-prm-rev-input");
+  const prmRevMenu = modal.querySelector("#mes-wo-tools-prm-rev-menu");
+  const prmRevList = modal.querySelector("#mes-wo-tools-prm-rev-list");
+  const prmRevWrapper = modal.querySelector("#mes-wo-prm-rev-ms");
+  const prmRevId = modal.querySelector("#mes-wo-tools-prm-rev-id");
+
+  const status = modal.querySelector("#mes-wo-tools-status");
+  const textarea = modal.querySelector("#mes-wo-tools-wo-input");
+  const applyButton = modal.querySelector('[data-action="apply"]');
+  const prmRevToggle = modal.querySelector('[data-action="toggle-prm-rev"]');
+
+  let searchRequestId = 0;
+  let searchDebounceTimer = null;
+  let groupedByPrmName = new Map();
+  let selectedPrmName = "";
+  let selectedRevision = null;
+  let visibleRevisionList = [];
+
+  const setStatus = (text) => {
+    status.textContent = text;
+  };
+
+  const hideMenu = (menuEl) => {
+    menuEl.classList.remove("is-open");
+  };
+
+  const showMenu = (menuEl) => {
+    menuEl.classList.add("is-open");
+  };
+
+  const normalizePrmName = (name) => String(name || "").trim();
+
+  const rebuildNameGroups = (items) => {
+    const groups = new Map();
+
+    for (const item of items) {
+      const name = normalizePrmName(item.prmName);
+      if (!name) {
+        continue;
+      }
+      if (!groups.has(name)) {
+        groups.set(name, []);
+      }
+      groups.get(name).push(item);
+    }
+
+    for (const [name, list] of groups.entries()) {
+      const deduped = [];
+      const seen = new Set();
+      for (const row of list) {
+        if (!row?.id || seen.has(row.id)) {
+          continue;
+        }
+        seen.add(row.id);
+        deduped.push(row);
+      }
+      deduped.sort((a, b) => (b.version || 0) - (a.version || 0));
+      groups.set(name, deduped);
+    }
+
+    groupedByPrmName = groups;
+  };
+
+  const getNameOptions = (filter = "") => {
+    const names = Array.from(groupedByPrmName.keys()).sort((a, b) => a.localeCompare(b));
+    const q = String(filter || "").trim().toLowerCase();
+    if (!q) {
+      return names;
+    }
+    return names.filter((name) => name.toLowerCase().includes(q));
+  };
+
+  const getRevisionOptions = (prmName, filter = "") => {
+    const list = groupedByPrmName.get(prmName) || [];
+    const q = String(filter || "").trim().toLowerCase();
+    if (!q) {
+      return list;
+    }
+
+    return list.filter((row) => {
+      const versionText = String(row.version || "");
+      return (
+        versionText.toLowerCase().includes(q) ||
+        String(row.id || "").toLowerCase().includes(q)
+      );
+    });
+  };
+
+  const setSelectedRevision = (row, syncInput = true) => {
+    selectedRevision = row || null;
+    if (syncInput) {
+      prmRevInput.value = selectedRevision ? String(selectedRevision.version ?? "") : "";
+    }
+    prmRevId.textContent = selectedRevision?.id || "Not selected";
+  };
+
+  const renderRevisionDropdown = (show = false) => {
+    visibleRevisionList = getRevisionOptions(selectedPrmName, prmRevInput.value);
+    prmRevList.innerHTML = "";
+
+    if (!selectedPrmName) {
+      const li = document.createElement("li");
+      li.className = "mes-wo-ms-option is-empty";
+      li.textContent = "Select PRM Name first";
+      prmRevList.appendChild(li);
+      setSelectedRevision(null, true);
+      prmRevInput.disabled = true;
+      prmRevToggle.disabled = true;
+      hideMenu(prmRevMenu);
+      return;
+    }
+
+    prmRevInput.disabled = false;
+    prmRevToggle.disabled = false;
+
+    if (!visibleRevisionList.length) {
+      const li = document.createElement("li");
+      li.className = "mes-wo-ms-option is-empty";
+      li.textContent = "No revisions found";
+      prmRevList.appendChild(li);
+      setSelectedRevision(null, false);
+      if (!show) {
+        hideMenu(prmRevMenu);
+      }
+      return;
+    }
+
+    if (!selectedRevision || !visibleRevisionList.some((x) => x.id === selectedRevision.id)) {
+      // Revisions are sorted highest-to-lowest, so index 0 is the latest rev.
+      setSelectedRevision(visibleRevisionList[0], true);
+    }
+
+    visibleRevisionList.forEach((row, index) => {
+      const li = document.createElement("li");
+      li.className = "mes-wo-ms-option";
+      if (selectedRevision?.id === row.id) {
+        li.classList.add("is-selected");
+      }
+      li.dataset.revIndex = String(index);
+      li.textContent = `Rev ${row.version} | ${row.id}`;
+      prmRevList.appendChild(li);
+    });
+
+    if (show) {
+      showMenu(prmRevMenu);
+    } else {
+      hideMenu(prmRevMenu);
+    }
+  };
+
+  const setSelectedName = (name, syncInput = true) => {
+    selectedPrmName = normalizePrmName(name);
+    if (syncInput) {
+      prmNameInput.value = selectedPrmName;
+    }
+    prmRevInput.value = "";
+    setSelectedRevision(null, true);
+    renderRevisionDropdown(false);
+  };
+
+  const renderNameDropdown = (show = false) => {
+    const options = getNameOptions(prmNameInput.value);
+    prmNameList.innerHTML = "";
+
+    if (!options.length) {
+      const li = document.createElement("li");
+      li.className = "mes-wo-ms-option is-empty";
+      li.textContent = "No PRM names found";
+      prmNameList.appendChild(li);
+      if (show) {
+        showMenu(prmNameMenu);
+      } else {
+        hideMenu(prmNameMenu);
+      }
+      return;
+    }
+
+    options.forEach((name) => {
+      const li = document.createElement("li");
+      li.className = "mes-wo-ms-option";
+      if (selectedPrmName === name) {
+        li.classList.add("is-selected");
+      }
+      li.dataset.prmName = name;
+      li.textContent = name;
+      prmNameList.appendChild(li);
+    });
+
+    if (show) {
+      showMenu(prmNameMenu);
+    } else {
+      hideMenu(prmNameMenu);
+    }
+  };
+
+  const doSearch = async () => {
+    const query = prmNameInput.value || "";
+    const requestId = ++searchRequestId;
+    const keepNameMenuOpen =
+      document.activeElement === prmNameInput ||
+      prmNameMenu.classList.contains("is-open");
+
+    setStatus(query.trim() ? `Searching PRMs for "${query.trim()}"...` : "Loading published PRMs...");
+
+    try {
+      const results = await searchPublishedPrms(query);
+      if (requestId !== searchRequestId) {
+        return;
+      }
+
+      rebuildNameGroups(results);
+
+      const nameOptions = getNameOptions("");
+      if (!nameOptions.length) {
+        selectedPrmName = "";
+        setSelectedRevision(null, true);
+        renderNameDropdown(keepNameMenuOpen);
+        renderRevisionDropdown(false);
+        setStatus("No published PRMs found.");
+        return;
+      }
+
+      if (selectedPrmName && !groupedByPrmName.has(selectedPrmName)) {
+        selectedPrmName = "";
+        setSelectedRevision(null, true);
+        prmRevInput.value = "";
+        renderRevisionDropdown(false);
+      } else if (selectedPrmName) {
+        renderRevisionDropdown(false);
+      }
+
+      renderNameDropdown(keepNameMenuOpen);
+      if (selectedPrmName) {
+        const revCount = (groupedByPrmName.get(selectedPrmName) || []).length;
+        setStatus(`Found ${nameOptions.length} PRM name(s). Selected "${selectedPrmName}" with ${revCount} rev(s).`);
+      } else {
+        setStatus(`Found ${nameOptions.length} PRM name(s). Select one from the dropdown.`);
+      }
+    } catch (error) {
+      if (requestId !== searchRequestId) {
+        return;
+      }
+
+      groupedByPrmName = new Map();
+      selectedPrmName = "";
+      setSelectedRevision(null, true);
+      renderNameDropdown(keepNameMenuOpen);
+      renderRevisionDropdown(false);
+      setStatus(`PRM search failed: ${error?.message || String(error)}`);
+    }
+  };
+
+  prmNameInput.addEventListener("focus", () => {
+    renderNameDropdown(true);
+  });
+
+  prmNameInput.addEventListener("input", () => {
+    renderNameDropdown(true);
+
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+    }
+    searchDebounceTimer = setTimeout(() => {
+      doSearch();
+    }, 280);
+  });
+
+  prmRevInput.addEventListener("focus", () => {
+    renderRevisionDropdown(true);
+  });
+
+  prmRevInput.addEventListener("input", () => {
+    renderRevisionDropdown(true);
+  });
+
+  modal.addEventListener("click", async (event) => {
+    if (!prmNameWrapper.contains(event.target)) {
+      hideMenu(prmNameMenu);
+    }
+    if (!prmRevWrapper.contains(event.target)) {
+      hideMenu(prmRevMenu);
+    }
+
+    const action = event.target?.dataset?.action;
+    if (!action) {
+      if (event.target === modal) {
+        closeWorkOrderToolsModal();
+      }
+
+      const nameOption = event.target.closest(".mes-wo-ms-option[data-prm-name]");
+      if (nameOption) {
+        setSelectedName(nameOption.dataset.prmName || "", true);
+        renderNameDropdown(false);
+        setStatus(`Selected PRM Name: ${selectedPrmName}`);
+      }
+
+      const revOption = event.target.closest(".mes-wo-ms-option[data-rev-index]");
+      if (revOption) {
+        const index = Number(revOption.dataset.revIndex);
+        const row = Number.isFinite(index) ? visibleRevisionList[index] : null;
+        if (row) {
+          setSelectedRevision(row, true);
+          renderRevisionDropdown(false);
+          setStatus(`Selected PRM Rev#: ${row.version} (${row.id})`);
+        }
+      }
+
+      return;
+    }
+
+    if (action === "close") {
+      closeWorkOrderToolsModal();
+      return;
+    }
+
+    if (action === "toggle-prm-name") {
+      if (prmNameMenu.classList.contains("is-open")) {
+        hideMenu(prmNameMenu);
+      } else {
+        renderNameDropdown(true);
+      }
+      return;
+    }
+
+    if (action === "toggle-prm-rev") {
+      if (prmRevMenu.classList.contains("is-open")) {
+        hideMenu(prmRevMenu);
+      } else {
+        renderRevisionDropdown(true);
+      }
+      return;
+    }
+
+    if (action === "apply") {
+      const prmId = selectedRevision?.id || "";
+      const prmName = selectedRevision
+        ? `${selectedPrmName} (Rev ${selectedRevision.version})`
+        : selectedPrmName;
+      const tokenInput = textarea.value;
+
+      try {
+        await runBulkWorkOrderPrmUpdate({
+          prmId,
+          prmName,
+          tokenInput,
+          statusEl: status,
+          applyButton
+        });
+      } catch (error) {
+        applyButton.disabled = false;
+        setStatus(`Bulk update failed: ${error?.message || String(error)}`);
+        showWoToolsToast(error?.message || "Bulk update failed", false);
+      }
+    }
+  });
+
+  prmNameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      renderNameDropdown(true);
+    }
+  });
+
+  prmRevInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      renderRevisionDropdown(true);
+    }
+  });
+
+  doSearch();
+};
+
 // ===== TOOLS MENU =====
 const createToolsMenu = () => {
   const existing = document.getElementById('mes-tools-menu');
@@ -1263,6 +2097,8 @@ const createToolsMenu = () => {
       <div class="mes-tools-label">— MO Tools —</div>
       <button class="mes-tool-item" data-tool="mo-auto-prm">MO PRM/INFO</button>
       <button class="mes-tool-item" data-tool="mo-tracker">MO STATUS (Not Working)</button>
+      <div class="mes-tools-label">— WO Tools —</div>
+      <button class="mes-tool-item" data-tool="wo-prm-bulk-update">WO PRM Bulk Updater</button>
       <div class="mes-tools-label">— Sheet Updater —</div>
       <button class="mes-tool-item" data-tool="ib-update-tracker">IB Update Tracker</button>
       <div class="mes-tools-label">— Reportal —</div>
@@ -2589,6 +3425,8 @@ document.addEventListener('click', (e) => {
     moAutoPrmCopy();
   } else if (tool === 'mo-tracker') {
     moTrackerStatusUpdater();
+  } else if (tool === 'wo-prm-bulk-update') {
+    openWorkOrderToolsModal();
   } else if (tool === 'ib-update-tracker') {
     runIBUpdateTracker();
   } else if (tool === 'inventory-reportal') {

@@ -693,3 +693,252 @@
   color: #9ca3af;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
+
+/* ===== WORK ORDER TOOLS MODAL ===== */
+.mes-wo-tools-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.52);
+  z-index: 2147483646;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+}
+
+.mes-wo-tools-modal {
+  width: min(860px, 96vw);
+  max-height: 90vh;
+  overflow: auto;
+  background: #111827;
+  color: #e5e7eb;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.mes-wo-tools-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #1f2937;
+}
+
+.mes-wo-tools-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.mes-wo-tools-close,
+.mes-wo-tools-btn {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  background: #1f2937;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.mes-wo-tools-close:hover,
+.mes-wo-tools-btn:hover {
+  background: #334155;
+  border-color: #64748b;
+}
+
+.mes-wo-tools-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mes-wo-tools-body {
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.mes-wo-tools-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+.mes-wo-ms {
+  position: relative;
+}
+
+.mes-wo-ms-control {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #0f172a;
+}
+
+.mes-wo-ms-input {
+  border: 0;
+  background: transparent;
+  min-height: 34px;
+  padding: 0 0.55rem;
+}
+
+.mes-wo-ms-input:focus {
+  outline: none;
+}
+
+.mes-wo-ms-toggle {
+  height: 100%;
+  min-width: 36px;
+  border: 0;
+  border-left: 1px solid #334155;
+  border-radius: 0 6px 6px 0;
+  background: #1f2937;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mes-wo-ms-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mes-wo-ms-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #0b1220;
+  max-height: 230px;
+  overflow: auto;
+  z-index: 20;
+  display: none;
+}
+
+.mes-wo-ms-menu.is-open {
+  display: block;
+}
+
+.mes-wo-ms-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mes-wo-ms-option {
+  padding: 0.42rem 0.55rem;
+  border-bottom: 1px solid #1f2937;
+  font-size: 12px;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.mes-wo-ms-option:last-child {
+  border-bottom: 0;
+}
+
+.mes-wo-ms-option:hover {
+  background: #1f2937;
+}
+
+.mes-wo-ms-option.is-selected {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.mes-wo-ms-option.is-empty {
+  color: #94a3b8;
+  cursor: default;
+}
+
+.mes-wo-tools-readonly {
+  min-height: 34px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #0b1220;
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 32px;
+  padding: 0 0.55rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.mes-wo-tools-search-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.mes-wo-tools-input,
+.mes-wo-tools-select,
+.mes-wo-tools-textarea {
+  width: 100%;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 12px;
+}
+
+.mes-wo-tools-input {
+  height: 34px;
+  padding: 0 0.55rem;
+}
+
+.mes-wo-tools-select {
+  min-height: 220px;
+  padding: 0.35rem;
+}
+
+.mes-wo-tools-select option {
+  padding: 0.25rem;
+}
+
+.mes-wo-tools-textarea {
+  min-height: 110px;
+  padding: 0.5rem;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.mes-wo-tools-status {
+  margin: 0;
+  padding: 0.55rem;
+  min-height: 74px;
+  white-space: pre-wrap;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #0b1220;
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.mes-wo-tools-footer {
+  padding: 0 14px 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .mes-wo-tools-search-row {
+    grid-template-columns: 1fr;
+  }
+
+  .mes-wo-tools-footer {
+    justify-content: stretch;
+  }
+
+  .mes-wo-tools-btn {
+    width: 100%;
+  }
+}

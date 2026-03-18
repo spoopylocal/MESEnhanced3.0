@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MES Enhanced 3.0 IBMOR",
-  "version": "3.2.0",
+  "version": "3.2.2",
   "description": "IBMOR program build with full MES tools including asset, report, and tracker workflows.",
   "permissions": [
     "downloads",
@@ -14,14 +14,15 @@
     "https://attachments-api.apps.wwt.com/*",
     "https://mes.apps.wwt.com/*",
     "https://reports.wwt.com/*",
-    "https://raw.githubusercontent.com/*"
+    "https://raw.githubusercontent.com/*",
+    "https://long-fog-579c.thomascarnellpc.workers.dev/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://mes.apps.wwt.com/orders/*"],
+      "matches": ["https://mes.apps.wwt.com/orders", "https://mes.apps.wwt.com/orders/*"],
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"

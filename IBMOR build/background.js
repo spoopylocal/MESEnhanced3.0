@@ -25,6 +25,69 @@ const UPDATE_FEED_URLS = [
 const UPDATE_ALARM_NAME = 'mes-enhanced-daily-update-check';
 const UPDATE_STATUS_KEY = 'mesUpdateStatus';
 
+// IBMOR -> Sheet sync config/state
+const IBMOR_SYNC_WEBAPP_URL = 'https://long-fog-579c.thomascarnellpc.workers.dev';
+const IBMOR_SYNC_TYPE = 'IBMOR';
+const IBMOR_SYNC_FIXED_TOKEN = 'ihateben';
+const IBMOR_SYNC_TOKEN_KEY = 'mes-ib-sheet-token';
+const IBMOR_SYNC_CONFIG_KEY = 'mes-ibmor-sheet-sync-config';
+const IBMOR_SYNC_STATUS_KEY = 'mes-ibmor-sheet-sync-status';
+const IBMOR_SYNC_CLIENT_ID_KEY = 'mes-ibmor-sheet-sync-client-id';
+const IBMOR_SYNC_ALARM_NAME = 'mes-ibmor-sheet-sync-5m';
+const IBMOR_SYNC_WINDOW_MS = 5 * 60 * 1000;
+const IBMOR_SYNC_URL_LIST = 'https://apirouter.apps.wwt.com/api/forward/mes-api/workOrders';
+const IBMOR_SYNC_URL_INFO = 'https://apirouter.apps.wwt.com/api/forward/mes-api/workOrderInfo?jobHeaderId=';
+const IBMOR_SYNC_URL_FLAGS_BASE = 'https://apirouter.apps.wwt.com/api/forward/mes-api/workOrder/';
+const IBMOR_SYNC_POST_BODY = {
+  limit: 1000,
+  offset: 0,
+  releasedOnly: true,
+  includeCompPercent: true,
+  includeLocations: true,
+  includeOrderManager: true,
+  facilityCode: 'WPC',
+  showUnassignedOnly: false,
+  orderBy: [
+    { orderField: 'priority', orderDirection: 'ASC' },
+    { orderField: 'criticalRatio', orderDirection: 'ASC' },
+    { orderField: 'documentNumber' }
+  ],
+  labArea: 'L4',
+  dynamicFilters: [
+    {
+      name: 'labDestinationName',
+      displayAs: 'Lab Destination',
+      type: 'dynamicLov',
+      dataType: 'string',
+      operator: '=',
+      availableOperators: ['=', '\u2260', '%'],
+      lovName: 'labDestinations',
+      filterValues: [
+        'ABM Lab Production',
+        'Build',
+        'Certification',
+        'FLX',
+        'INT',
+        'L2 Expansion',
+        'L2 Production',
+        'L3 Networking',
+        'L3 Production',
+        'Microwave',
+        'NAIC1 L3',
+        'NAIC1 Rack & Stack',
+        'RF',
+        'Rack & Stack',
+        'Repair',
+        'Test',
+        'VIC Lab'
+      ],
+      values: ['NAIC1 Rack & Stack']
+    }
+  ]
+};
+
+let ibmorSyncInFlight = null;
+
 function compareVersions(versionA, versionB) {
   const a = String(versionA || '0').split('.').map((n) => parseInt(n, 10) || 0);
   const b = String(versionB || '0').split('.').map((n) => parseInt(n, 10) || 0);
@@ -123,23 +186,328 @@ function setupUpdateAlarm() {
   });
 }
 
+function setupIbmorSyncAlarm() {
+  browser.alarms.create(IBMOR_SYNC_ALARM_NAME, {
+    delayInMinutes: 1,
+    periodInMinutes: 5
+  });
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function isEligibleMesOrdersUrl(url) {
+  if (typeof url !== 'string' || !url) return false;
+  return /^https:\/\/mes\.apps\.wwt\.com\/orders(?:\/[^\/?#]+)?(?:[?#].*)?$/.test(url);
+}
+
+async function getActiveEligibleMesOrdersTab() {
+  const tabs = await browser.tabs.query({ active: true });
+  for (const tab of tabs) {
+    const url = String(tab?.url || '');
+    if (isEligibleMesOrdersUrl(url)) {
+      return {
+        tabId: tab.id,
+        windowId: tab.windowId,
+        url
+      };
+    }
+  }
+  return null;
+}
+
+async function getOrCreateIbmorClientId() {
+  const saved = await browser.storage.local.get(IBMOR_SYNC_CLIENT_ID_KEY);
+  let id = saved?.[IBMOR_SYNC_CLIENT_ID_KEY];
+  if (id && typeof id === 'string') {
+    return id;
+  }
+
+  id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  await browser.storage.local.set({ [IBMOR_SYNC_CLIENT_ID_KEY]: id });
+  return id;
+}
+
+async function getIbmorSyncConfig() {
+  return {
+    enabled: true,
+    token: IBMOR_SYNC_FIXED_TOKEN,
+    windowMs: IBMOR_SYNC_WINDOW_MS
+  };
+}
+
+async function setIbmorSyncConfig(nextConfig = {}) {
+  // Intentionally no-op: sync now uses a fixed token and is always enabled.
+  return getIbmorSyncConfig();
+}
+
+async function saveIbmorSyncStatus(status = {}) {
+  const payload = {
+    ...status,
+    checkedAt: Date.now(),
+    checkedAtIso: nowIso()
+  };
+  await browser.storage.local.set({ [IBMOR_SYNC_STATUS_KEY]: payload });
+  return payload;
+}
+
+async function getIbmorSyncStatus() {
+  const saved = await browser.storage.local.get(IBMOR_SYNC_STATUS_KEY);
+  return saved?.[IBMOR_SYNC_STATUS_KEY] || null;
+}
+
+async function ibmorFetchJson(url, opts) {
+  const response = await fetch(url, opts);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} ${url}`);
+  }
+  return response.json();
+}
+
+async function ibmorPostToSheet(token, payload) {
+  const response = await fetch(`${IBMOR_SYNC_WEBAPP_URL}?token=${encodeURIComponent(token)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const text = await response.text().catch(() => '');
+  let json = {};
+  try {
+    json = JSON.parse(text);
+  } catch (e) {
+    json = {};
+  }
+
+  return {
+    response,
+    text,
+    json
+  };
+}
+
+async function runIbmorSheetSync(trigger = 'alarm') {
+  if (ibmorSyncInFlight) {
+    return ibmorSyncInFlight;
+  }
+
+  ibmorSyncInFlight = (async () => {
+    const config = await getIbmorSyncConfig();
+
+    const lastStatus = await getIbmorSyncStatus();
+    const lastCheckedAt = Number(lastStatus?.checkedAt || 0);
+    const withinLocalWindow = lastCheckedAt > 0 && (Date.now() - lastCheckedAt) < config.windowMs;
+    if (withinLocalWindow) {
+      return saveIbmorSyncStatus({
+        ok: true,
+        ran: false,
+        skipped: true,
+        reason: 'local-recent-check-window',
+        trigger,
+        previousCheckedAt: lastCheckedAt,
+        previousCheckedAtIso: lastStatus?.checkedAtIso || ''
+      });
+    }
+
+    const activeMesTab = await getActiveEligibleMesOrdersTab();
+    if (!activeMesTab) {
+      return saveIbmorSyncStatus({
+        ok: true,
+        ran: false,
+        skipped: true,
+        reason: 'no-eligible-mes-orders-tab',
+        trigger
+      });
+    }
+
+    const clientId = await getOrCreateIbmorClientId();
+
+    try {
+      // Server-side claim check: if another user already uploaded in the 5-minute window, skip heavy API calls.
+      const claim = await ibmorPostToSheet(config.token, {
+        type: IBMOR_SYNC_TYPE,
+        action: 'claimWindow',
+        windowMs: config.windowMs,
+        clientId,
+        trigger
+      });
+
+      if (!claim.response.ok) {
+        return saveIbmorSyncStatus({
+          ok: false,
+          ran: false,
+          skipped: true,
+          reason: 'claim-http-failed',
+          trigger,
+          statusCode: claim.response.status,
+          details: claim.text.slice(0, 300)
+        });
+      }
+
+      const shouldUpload = claim.json?.shouldUpload !== false;
+      if (!shouldUpload) {
+        return saveIbmorSyncStatus({
+          ok: true,
+          ran: false,
+          skipped: true,
+          reason: claim.json?.reason || 'recent-update-window',
+          trigger,
+          activeTabUrl: activeMesTab.url,
+          lastUploadedAt: claim.json?.lastUploadedAt || null,
+          sourceClientId: claim.json?.clientId || null
+        });
+      }
+
+      const list = await ibmorFetchJson(IBMOR_SYNC_URL_LIST, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(IBMOR_SYNC_POST_BODY)
+      });
+
+      if (!Array.isArray(list) || list.length === 0) {
+        return saveIbmorSyncStatus({
+          ok: true,
+          ran: true,
+          skipped: false,
+          reason: 'no-orders',
+          trigger,
+          orderCount: 0,
+          flagCount: 0
+        });
+      }
+
+      const results = await Promise.all(list.map(async (order) => {
+        const id = order?.jobHeaderId;
+        if (!id) return null;
+
+        try {
+          const info = await ibmorFetchJson(`${IBMOR_SYNC_URL_INFO}${encodeURIComponent(id)}`, {
+            credentials: 'include',
+            headers: {
+              'Accept': 'application/json'
+            }
+          });
+
+          let flags = [];
+          try {
+            flags = await ibmorFetchJson(`${IBMOR_SYNC_URL_FLAGS_BASE}${encodeURIComponent(id)}/flags`, {
+              credentials: 'include',
+              headers: {
+                'Accept': 'application/json'
+              }
+            });
+          } catch (e) {
+            flags = [];
+          }
+
+          return { info, flags };
+        } catch (e) {
+          return null;
+        }
+      }));
+
+      const infos = [];
+      const flagDetails = [];
+
+      for (const result of results.filter(Boolean)) {
+        infos.push(result.info);
+        const flags = Array.isArray(result.flags) ? result.flags : [];
+        for (const flag of flags) {
+          flagDetails.push({
+            ...flag,
+            documentNumber: result.info?.documentNumber || '',
+            jobHeaderId: result.info?.jobHeaderId || ''
+          });
+        }
+      }
+
+      const upload = await ibmorPostToSheet(config.token, {
+        type: IBMOR_SYNC_TYPE,
+        action: 'upload',
+        windowMs: config.windowMs,
+        clientId,
+        trigger,
+        infos,
+        flagDetails
+      });
+
+      if (!upload.response.ok || upload.json?.ok !== true) {
+        return saveIbmorSyncStatus({
+          ok: false,
+          ran: true,
+          skipped: false,
+          reason: 'upload-failed',
+          trigger,
+          statusCode: upload.response.status,
+          details: upload.text.slice(0, 300),
+          orderCount: infos.length,
+          flagCount: flagDetails.length
+        });
+      }
+
+      return saveIbmorSyncStatus({
+        ok: true,
+        ran: true,
+        skipped: false,
+        reason: 'uploaded',
+        trigger,
+        activeTabUrl: activeMesTab.url,
+        orderCount: upload.json?.wrote?.IBMOR_Orders ?? infos.length,
+        flagCount: upload.json?.wrote?.FlagDetails ?? flagDetails.length,
+        wrote: upload.json?.wrote || null
+      });
+    } catch (error) {
+      return saveIbmorSyncStatus({
+        ok: false,
+        ran: false,
+        skipped: false,
+        reason: 'exception',
+        trigger,
+        error: error?.message || String(error)
+      });
+    }
+  })();
+
+  try {
+    return await ibmorSyncInFlight;
+  } finally {
+    ibmorSyncInFlight = null;
+  }
+}
+
 browser.runtime.onStartup.addListener(() => {
   setupUpdateAlarm();
+  setupIbmorSyncAlarm();
   checkForUpdates('startup');
+  runIbmorSheetSync('startup');
 });
 
 browser.runtime.onInstalled.addListener(() => {
   setupUpdateAlarm();
+  setupIbmorSyncAlarm();
   checkForUpdates('installed');
+  runIbmorSheetSync('installed');
 });
 
 browser.alarms.onAlarm.addListener((alarm) => {
   if (alarm?.name === UPDATE_ALARM_NAME) {
     checkForUpdates('daily');
   }
+
+  if (alarm?.name === IBMOR_SYNC_ALARM_NAME) {
+    runIbmorSheetSync('alarm');
+  }
 });
 
 setupUpdateAlarm();
+setupIbmorSyncAlarm();
 
 // Helper function to extract GICLAB ticket from labNotes
 function extractGICLABTicket(labNotes) {
@@ -289,6 +657,38 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === 'CHECK_FOR_UPDATES') {
       return checkForUpdates(message?.trigger || 'manual');
+    }
+
+    if (message?.type === 'GET_IBMOR_SYNC_CONFIG') {
+      const config = await getIbmorSyncConfig();
+      return {
+        ok: true,
+        enabled: config.enabled,
+        hasToken: Boolean(config.token),
+        windowMs: config.windowMs
+      };
+    }
+
+    if (message?.type === 'SET_IBMOR_SYNC_CONFIG') {
+      const config = await setIbmorSyncConfig({
+        enabled: message?.enabled,
+        token: message?.token
+      });
+
+      return {
+        ok: true,
+        enabled: config.enabled,
+        hasToken: Boolean(config.token),
+        windowMs: config.windowMs
+      };
+    }
+
+    if (message?.type === 'GET_IBMOR_SYNC_STATUS') {
+      return getIbmorSyncStatus();
+    }
+
+    if (message?.type === 'RUN_IBMOR_SYNC_NOW') {
+      return runIbmorSheetSync(message?.trigger || 'manual');
     }
 
     if (message?.type === "download") {
